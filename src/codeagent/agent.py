@@ -332,13 +332,14 @@ def run_agent(task: str, workdir: Path, cfg: Config, verbose: bool = True, image
         if msg.content:
             if verbose:
                 _print_assistant_message(msg.content)
-            if msg.content.strip().startswith("DONE"):
-                _checkpoint(workdir, "checkpoint: done")
-                # Save memories from this session
-                extract_and_save_memories(workdir, messages)
-                if verbose and HAS_RICH:
+            _checkpoint(workdir, "checkpoint: response")
+            extract_and_save_memories(workdir, messages)
+            if verbose and HAS_RICH:
+                if "DONE" in msg.content.upper():
                     console.rule("[bold green]✅ Task Complete[/bold green]")
-                return messages
+                else:
+                    console.rule("[bold yellow]💬 Agent Replied[/bold yellow]")
+            return messages
         else:
             # Check DONE in reasoning
             if reasoning and "DONE:" in reasoning:

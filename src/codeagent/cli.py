@@ -29,15 +29,29 @@ def _show_banner():
 
 
 def main():
-    # Auto-insert 'run' if user types `alpiecode "task"` without subcommand
-    if len(sys.argv) > 1 and sys.argv[1] not in (
-        "init", "run", "chat", "plan", "diff", "-h", "--help", "--version"
-    ):
-        sys.argv.insert(1, "run")
+    known_commands = {"init", "run", "chat", "plan", "diff", "-h", "--help", "--version"}
+    has_subcommand = any(arg in known_commands for arg in sys.argv[1:])
+    
+    if not has_subcommand and len(sys.argv) > 1:
+        # Find first non-flag argument to insert 'run'
+        insert_idx = 1
+        for i in range(1, len(sys.argv)):
+            if not sys.argv[i].startswith("-"):
+                insert_idx = i
+                break
+        sys.argv.insert(insert_idx, "run")
+
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("--workdir", default=".", help="Repo directory (default: current dir)")
+    common.add_argument("--image", default=None, help="Path to an image file for vision analysis")
+    common.add_argument("--max-turns", type=int, default=None, help="Override max turns")
+    common.add_argument("--no-thinking", action="store_true", help="Disable VLM reasoning/thinking mode")
+    common.add_argument("--quiet", action="store_true", help="Suppress per-turn logging")
 
     parser = argparse.ArgumentParser(
         prog="alpiecode",
         description="AlpieCode — Autonomous AI Coding Agent powered by 169Pi Alpie VLM",
+        parents=[common],
     )
     sub = parser.add_subparsers(dest="command")
 
@@ -45,30 +59,18 @@ def main():
     sub.add_parser("init", help="Configure your VLM/OpenAI-compatible endpoint")
 
     # ── run ──
-    run_p = sub.add_parser("run", help="Run a coding task against a repository")
+    run_p = sub.add_parser("run", help="Run a coding task against a repository", parents=[common])
     run_p.add_argument("task", help="Natural-language task description")
-    run_p.add_argument("--workdir", default=".", help="Repo directory (default: current dir)")
-    run_p.add_argument("--image", default=None, help="Path to an image file for vision analysis")
-    run_p.add_argument("--max-turns", type=int, default=None, help="Override max turns")
-    run_p.add_argument("--no-thinking", action="store_true", help="Disable VLM reasoning/thinking mode")
-    run_p.add_argument("--quiet", action="store_true", help="Suppress per-turn logging")
 
     # ── chat ──
-    chat_p = sub.add_parser("chat", help="Interactive chat mode with AlpieCode")
-    chat_p.add_argument("--workdir", default=".", help="Repo directory (default: current dir)")
-    chat_p.add_argument("--max-turns", type=int, default=None, help="Override max turns per message")
-    chat_p.add_argument("--no-thinking", action="store_true", help="Disable VLM reasoning/thinking mode")
-    chat_p.add_argument("--quiet", action="store_true", help="Suppress per-turn logging")
+    chat_p = sub.add_parser("chat", help="Interactive chat mode with AlpieCode", parents=[common])
 
     # ── plan ──
-    plan_p = sub.add_parser("plan", help="Generate a plan without making changes (read-only)")
+    plan_p = sub.add_parser("plan", help="Generate a plan without making changes (read-only)", parents=[common])
     plan_p.add_argument("task", help="Natural-language task to plan for")
-    plan_p.add_argument("--workdir", default=".", help="Repo directory (default: current dir)")
-    plan_p.add_argument("--image", default=None, help="Path to an image file for vision analysis")
 
     # ── diff ──
-    diff_p = sub.add_parser("diff", help="Show changes AlpieCode has made since last checkpoint")
-    diff_p.add_argument("--workdir", default=".", help="Repo directory (default: current dir)")
+    diff_p = sub.add_parser("diff", help="Show changes AlpieCode has made since last checkpoint", parents=[common])
 
     args = parser.parse_args()
 
