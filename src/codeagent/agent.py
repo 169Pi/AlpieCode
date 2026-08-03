@@ -296,7 +296,7 @@ def run_chat(workdir: Path, cfg: Config, verbose: bool = True) -> None:
     if HAS_RICH:
         console.print()
         console.print(Panel(
-            "[bold]codeagent[/bold] interactive mode\n"
+            "[bold cyan]AlpieCode[/bold cyan] interactive mode\n"
             f"📂 Working in: [cyan]{workdir}[/cyan]\n"
             f"🤖 Model: [cyan]{cfg.model}[/cyan]\n\n"
             "Type your request, or [bold red]exit[/bold red] / [bold red]quit[/bold red] to stop.",

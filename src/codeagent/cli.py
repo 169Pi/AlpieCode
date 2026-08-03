@@ -1,5 +1,5 @@
 """
-CLI entry point for codeagent.
+CLI entry point for AlpieCode.
 """
 
 import argparse
@@ -10,19 +10,22 @@ from .config import CONFIG_PATH, interactive_init, load_config
 
 
 BANNER = r"""
-   ___          _         _                    _
-  / __\___   __| | ___   / \   __ _  ___ _ __ | |_
- / /  / _ \ / _` |/ _ \ /  /\ / _` |/ _ \ '_ \| __|
-/ /__| (_) | (_| |  __// /_// (_| |  __/ | | | |_
-\____/\___/ \__,_|\___/\___,' \__, |\___|_| |_|\__|
-                              |___/
+    _    _     _      ____            _      
+   / \  | |_ _| | ___ / ___|___   __| | ___ 
+  / _ \ | | '_ \ |/ _ \ |   / _ \ / _` |/ _ \
+ / ___ \| | |_) | |  __/ |__| (_) | (_| |  __/
+/_/   \_\_|_.__/|_|\___|\____\___/ \__,_|\___|
 """
 
 
 def main():
+    # If the user types `alpiecode "task description"` without explicit `run`, auto-insert `run`
+    if len(sys.argv) > 1 and sys.argv[1] not in ("init", "run", "chat", "-h", "--help", "--version"):
+        sys.argv.insert(1, "run")
+
     parser = argparse.ArgumentParser(
-        prog="codeagent",
-        description="Coding agent CLI backed by your own VLM endpoint",
+        prog="alpiecode",
+        description="AlpieCode — Autonomous AI Coding Agent powered by 169Pi Alpie VLM",
     )
     sub = parser.add_subparsers(dest="command")
 
@@ -30,14 +33,14 @@ def main():
     sub.add_parser("init", help="Configure your VLM/OpenAI-compatible endpoint")
 
     # ── run ──
-    run_p = sub.add_parser("run", help="Run a coding task against a repo")
+    run_p = sub.add_parser("run", help="Run a coding task against a repository")
     run_p.add_argument("task", help="Natural-language task description")
     run_p.add_argument("--workdir", default=".", help="Repo directory to operate in (default: current dir)")
     run_p.add_argument("--max-turns", type=int, default=None, help="Override configured max turns")
     run_p.add_argument("--quiet", action="store_true", help="Suppress per-turn logging")
 
     # ── chat ──
-    chat_p = sub.add_parser("chat", help="Interactive chat mode with the agent")
+    chat_p = sub.add_parser("chat", help="Interactive chat mode with AlpieCode")
     chat_p.add_argument("--workdir", default=".", help="Repo directory to operate in (default: current dir)")
     chat_p.add_argument("--max-turns", type=int, default=None, help="Override configured max turns per message")
     chat_p.add_argument("--quiet", action="store_true", help="Suppress per-turn logging")
@@ -62,7 +65,7 @@ def main():
         try:
             from rich.console import Console
             console = Console()
-            console.print(BANNER, style="bold blue", highlight=False)
+            console.print(BANNER, style="bold cyan", highlight=False)
         except ImportError:
             print(BANNER)
 
@@ -76,7 +79,7 @@ def main():
         try:
             from rich.console import Console
             console = Console()
-            console.print(BANNER, style="bold blue", highlight=False)
+            console.print(BANNER, style="bold cyan", highlight=False)
         except ImportError:
             print(BANNER)
 

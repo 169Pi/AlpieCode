@@ -14,6 +14,7 @@ dependencies = [
 ]
 
 [project.scripts]
+alpiecode = "codeagent.cli:main"
 codeagent = "codeagent.cli:main"
 
 [tool.setuptools.packages.find]

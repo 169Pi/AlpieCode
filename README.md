@@ -1,138 +1,74 @@
-# codeagent
+# AlpieCode
 
-Minimal installable coding-agent CLI backed by an OpenAI-compatible endpoint
-(vLLM, or anything that speaks the `/v1/chat/completions` tool-calling protocol).
+Autonomous AI Coding Agent CLI backed by 169Pi Alpie VLM / OpenAI-compatible endpoint
+(speaks the `/v1/chat/completions` tool-calling protocol).
+
+```
+    _    _     _      ____            _      
+   / \  | |_ _| | ___ / ___|___   __| | ___ 
+  / _ \ | | '_ \ |/ _ \ |   / _ \ / _` |/ _ \
+ / ___ \| | |_) | |  __/ |__| (_) | (_| |  __/
+/_/   \_\_|_.__/|_|\___|\____\___/ \__,_|\___|
+```
 
 ## Quick Start
 
 ```bash
 git clone <repo-url>
 cd codeagent-poc
-pip install .
+uv venv && source .venv/bin/activate
+uv pip install -e .
 ```
 
-That's it — the defaults point to the team's VLM endpoint, so you can start
-using it immediately:
+The defaults point directly to the team's Alpie VLM endpoint (`http://20.245.200.125:8000/v1` with model `169Pi/grpo_phase_2_merged`), so you can start using it immediately:
 
 ```bash
 cd your-repo
-codeagent run "fix the failing test in tests/test_foo.py"
-```
-
-## Install
-
-```bash
-# Option 1: pip install (recommended)
-pip install .
-
-# Option 2: just install dependencies
-pip install -r requirements.txt
-
-# Option 3: isolated environment
-pipx install .
-```
-
-This registers a `codeagent` command on your PATH.
-
-## Configure (Optional)
-
-The defaults work out of the box with the team's VLM endpoint. If you need
-to point to a different server:
-
-```bash
-codeagent init
-```
-
-Prompts for:
-- **base_url** — your vLLM server's OpenAI-compatible URL
-- **model** — the served model name
-- **api_key** — leave blank if your endpoint doesn't require auth
-
-This writes `~/.codeagent/config.json`. You can also set environment variables:
-
-```bash
-export CODEAGENT_BASE_URL=http://your-host:8000/v1
-export CODEAGENT_MODEL=your-model
-export CODEAGENT_API_KEY=  # optional
+alpiecode "explain what this project does"
+# or
+alpiecode run "fix the failing test in tests/test_foo.py"
 ```
 
 ## Usage
 
-### One-Shot Task
-
+### 1. Direct Task Execution
 ```bash
-cd your-repo
-codeagent run "add logging to the main function"
+alpiecode "create a python script to calculate fibonacci numbers and add unit tests"
 ```
 
-### Interactive Chat
-
+### 2. Explicit Run Subcommand
 ```bash
-cd your-repo
-codeagent chat
+alpiecode run "refactor database connection in main.py" --max-turns 30
 ```
 
-Type your requests interactively. The agent maintains context across messages.
-Type `exit` or `quit` to stop.
-
-### Options
-
+### 3. Interactive Chat Mode
 ```bash
-codeagent run "task" --workdir /path/to/repo  # operate on a different directory
-codeagent run "task" --max-turns 50           # increase max turns
-codeagent run "task" --quiet                  # suppress per-turn output
+alpiecode chat
 ```
+Maintains context across multiple prompts in an interactive REPL session. Type `exit` or `quit` to stop.
 
-## How It Works
-
-The agent will:
-1. `git init` the working directory if it isn't already a repo
-2. Read/edit files and run shell commands via tool calls
-3. Commit a checkpoint after every turn (`git log` to see the trail —
-   `git reset --hard <sha>` to rollback)
-4. Stop when the model returns a message starting with `DONE:`
-
-### Available Tools
-
-| Tool | Description |
-|------|-------------|
-| `bash` | Run any shell command |
-| `read_file` | Read a file (with optional line range) |
-| `write_file` | Create or overwrite a file |
-| `edit_file` | Replace an exact string in a file |
-| `list_files` | List files in the repo tree |
-
-## Project Structure
-
-```
-codeagent-poc/
-├── pyproject.toml          # Package metadata & dependencies
-├── requirements.txt        # For pip install -r
-├── README.md
-└── src/
-    └── codeagent/
-        ├── __init__.py
-        ├── config.py       # Config loading (file/env/defaults)
-        ├── tools.py        # Tool definitions & implementations
-        ├── agent.py        # Core agent loop & chat mode
-        └── cli.py          # CLI entry point
-```
-
-## Requirements on the Model-Serving Side
-
-Your vLLM server needs tool-calling enabled:
-
+### 4. Configuration (Optional)
 ```bash
-vllm serve <your-model> \
-  --tool-call-parser hermes \
-  --enable-auto-tool-choice
+alpiecode init
+```
+Configures custom endpoint settings saved to `~/.alpiecode/config.json`. Or set env vars:
+```bash
+export ALPIECODE_BASE_URL=http://your-host:8000/v1
+export ALPIECODE_MODEL=169Pi/grpo_phase_2_merged
 ```
 
-## Known Limitations
+## Built-in Tool Support
+AlpieCode comes equipped with native tool calling:
+- **`list_files`**: Inspect repository directory structure.
+- **`read_file`**: Read file contents with line range filtering.
+- **`write_file`**: Create new files or overwrite existing ones.
+- **`edit_file`**: Make exact, targeted line string replacements.
+- **`bash`**: Execute shell commands/tests in the repository directory.
 
-- `bash` runs unsandboxed shell commands — fine for a personal repo, not safe
-  for untrusted tasks. Wrap in a container for multi-tenant use.
-- No context compaction — long sessions will eventually hit the model's
-  context window.
-- Checkpoints are commits but there's no built-in `codeagent rollback`
-  command yet — use `git log --oneline` and `git reset --hard` manually.
+## Automatic Checkpoints
+AlpieCode automatically initializes `git` if not already present and creates a commit checkpoint after every turn.
+If you ever need to rollback:
+```bash
+git log --oneline
+git reset --hard <checkpoint-sha>
+```
