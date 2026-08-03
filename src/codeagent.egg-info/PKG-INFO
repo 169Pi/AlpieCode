@@ -1,0 +1,8 @@
+Metadata-Version: 2.4
+Name: codeagent
+Version: 0.1.0
+Summary: Minimal installable coding-agent CLI backed by any OpenAI-compatible (e.g. vLLM) endpoint
+Requires-Python: >=3.9
+Requires-Dist: openai>=1.30.0
+Requires-Dist: httpx>=0.25.0
+Requires-Dist: rich>=13.0
