@@ -235,7 +235,7 @@ def run_agent(task: str, workdir: Path, cfg: Config, verbose: bool = True, image
     client = OpenAI(
         base_url=cfg.base_url,
         api_key=cfg.api_key,
-        timeout=httpx.Timeout(300.0, connect=10.0),
+        timeout=httpx.Timeout(60.0, connect=5.0),
     )
     dispatch = make_dispatch(workdir)
 
@@ -299,8 +299,15 @@ def run_agent(task: str, workdir: Path, cfg: Config, verbose: bool = True, image
             )
         except Exception as e:
             if verbose:
-                console.print(f"❌ API error: {e}", style="bold red")
-            raise
+                if HAS_RICH:
+                    console.print(
+                        f"\n❌ [bold red]Cannot connect to VLM Endpoint ({cfg.base_url})[/bold red]\n"
+                        f"   Error: {e}\n"
+                        f"   💡 [yellow]Check if port 8000 of 20.245.200.125 is blocked by firewall/VPN on your network.[/yellow]\n"
+                    )
+                else:
+                    print(f"\n❌ Cannot connect to VLM Endpoint ({cfg.base_url}): {e}")
+            return messages
 
         msg = resp.choices[0].message
 
