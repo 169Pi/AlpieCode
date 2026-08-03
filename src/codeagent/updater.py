@@ -79,15 +79,15 @@ def auto_update(quiet: bool = False) -> bool:
                 print("🔄 AlpieCode auto-updater: New updates found on GitHub! Upgrading...")
 
         # Determine python / uv executable
-        repo_url = "git+https://github.com/169Pi/AlpieCode.git"
+        repo_url = "git+https://github.com/169Pi/AlpieCode.git@main"
         
-        # Try uv pip install --upgrade first, fallback to pip install --upgrade
-        cmd = ["uv", "pip", "install", "--upgrade", "--quiet", repo_url]
+        # Try uv pip install --upgrade --no-cache first
+        cmd = ["uv", "pip", "install", "--upgrade", "--no-cache", "--quiet", repo_url]
         try:
             res = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
             if res.returncode != 0:
-                # Fallback to sys.executable -m pip install --upgrade
-                cmd = [sys.executable, "-m", "pip", "install", "--upgrade", "--quiet", repo_url]
+                # Fallback to sys.executable -m pip install --upgrade --no-cache-dir
+                cmd = [sys.executable, "-m", "pip", "install", "--upgrade", "--no-cache-dir", "--quiet", repo_url]
                 subprocess.run(cmd, capture_output=True, text=True, timeout=30)
         except Exception:
             pass

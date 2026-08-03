@@ -28,18 +28,44 @@ def _show_banner():
         print(BANNER)
 
 
-def main():
+def _normalize_args():
     known_commands = {"init", "run", "chat", "plan", "diff", "-h", "--help", "--version"}
-    has_subcommand = any(arg in known_commands for arg in sys.argv[1:])
+    subcommand = None
     
-    if not has_subcommand and len(sys.argv) > 1:
-        # Find first non-flag argument to insert 'run'
-        insert_idx = 1
-        for i in range(1, len(sys.argv)):
-            if not sys.argv[i].startswith("-"):
-                insert_idx = i
-                break
-        sys.argv.insert(insert_idx, "run")
+    # Check if a subcommand is present
+    for arg in sys.argv[1:]:
+        if arg in known_commands:
+            subcommand = arg
+            break
+            
+    if not subcommand and len(sys.argv) > 1:
+        subcommand = "run"
+        sys.argv.insert(1, "run")
+
+    if subcommand in ("run", "plan") and len(sys.argv) > 2:
+        cmd_idx = sys.argv.index(subcommand)
+        sub_args = sys.argv[cmd_idx + 1:]
+        
+        flags = []
+        positionals = []
+        
+        i = 0
+        while i < len(sub_args):
+            arg = sub_args[i]
+            if arg.startswith("-"):
+                flags.append(arg)
+                if arg in ("--workdir", "--image", "--max-turns") and i + 1 < len(sub_args):
+                    flags.append(sub_args[i + 1])
+                    i += 1
+            else:
+                positionals.append(arg)
+            i += 1
+            
+        sys.argv = sys.argv[:cmd_idx + 1] + flags + positionals
+
+
+def main():
+    _normalize_args()
 
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--workdir", default=".", help="Repo directory (default: current dir)")
