@@ -399,21 +399,31 @@ def _apply_patch(workdir: Path, path: str, patch: str) -> str:
 
 
 def _web_search(query: str, num_results: int = 5) -> str:
-    """Search the web using DuckDuckGo (no API key needed)."""
+    """Search the web using DDGS (DuckDuckGo)."""
+    import warnings
+    warnings.filterwarnings("ignore", category=RuntimeWarning)
+    
     try:
-        from duckduckgo_search import DDGS
+        try:
+            from ddgs import DDGS
+        except ImportError:
+            from duckduckgo_search import DDGS
+            
         with DDGS() as ddgs:
             results = list(ddgs.text(query, max_results=min(num_results, 10)))
         if not results:
-            return f"No results found for: {query}"
+            return (
+                f"No web results found for '{query}'. "
+                "Tip: If searching for Python package documentation, use bash: python -c 'import pkg; help(pkg)'"
+            )
         formatted = []
         for i, r in enumerate(results, 1):
             formatted.append(f"{i}. **{r.get('title', 'No title')}**\n   URL: {r.get('href', '')}\n   {r.get('body', '')}")
         return "\n\n".join(formatted)
     except ImportError:
-        return "error: web search unavailable — install duckduckgo-search package"
+        return "error: web search unavailable — install ddgs or duckduckgo-search package"
     except Exception as e:
-        return f"error during web search: {e}"
+        return f"error during web search: {e}. Tip: Try python -c 'help(...)' for installed library docs."
 
 
 def _fetch_url(url: str) -> str:
