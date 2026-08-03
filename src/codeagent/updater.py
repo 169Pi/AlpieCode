@@ -13,8 +13,10 @@ import time
 import urllib.request
 from pathlib import Path
 
+import threading
+
 CACHE_FILE = Path.home() / ".alpiecode" / "update_cache.json"
-CHECK_INTERVAL_SECONDS = 3600  # Check at most once per hour to stay fast
+CHECK_INTERVAL_SECONDS = 86400  # Check at most once per 24 hours in background
 
 
 def _get_installed_sha() -> str:
@@ -40,15 +42,41 @@ def _save_cache(sha: str) -> None:
         pass
 
 
+def _bg_update_worker(quiet: bool = False) -> None:
+    """Background worker function that performs the check and upgrade silently."""
+    try:
+        url = "https://api.github.com/repos/169Pi/AlpieCode/commits/main"
+        req = urllib.request.Request(url, headers={"User-Agent": "AlpieCode-Updater"})
+        with urllib.request.urlopen(req, timeout=3.0) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            latest_sha = data.get("sha", "")
+    except Exception:
+        return
+
+    current_sha = _get_installed_sha()
+    if latest_sha and latest_sha != current_sha:
+        repo_url = "git+https://github.com/169Pi/AlpieCode.git@main"
+        cmd = ["uv", "pip", "install", "--upgrade", "--no-cache", "--quiet", repo_url]
+        try:
+            res = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            if res.returncode != 0:
+                cmd = [sys.executable, "-m", "pip", "install", "--upgrade", "--no-cache-dir", "--quiet", repo_url]
+                subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        except Exception:
+            pass
+
+    _save_cache(latest_sha or current_sha)
+
+
 def auto_update(quiet: bool = False) -> bool:
     """
-    Check for updates on GitHub and auto-upgrade AlpieCode if a new version is available.
-    Returns True if an update was performed.
+    Spawns a non-blocking background thread to check and update AlpieCode
+    without adding any latency to the CLI startup (< 10ms).
     """
     if os.environ.get("ALPIECODE_NO_UPDATE") == "1":
         return False
 
-    # Check if we checked recently (within last 1 hour)
+    # Check cache interval
     if CACHE_FILE.exists():
         try:
             data = json.loads(CACHE_FILE.read_text())
@@ -58,48 +86,7 @@ def auto_update(quiet: bool = False) -> bool:
         except Exception:
             pass
 
-    # Fetch latest commit SHA from GitHub API (timeout 2.5s to never block user)
-    try:
-        url = "https://api.github.com/repos/169Pi/AlpieCode/commits/main"
-        req = urllib.request.Request(url, headers={"User-Agent": "AlpieCode-Updater"})
-        with urllib.request.urlopen(req, timeout=2.5) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            latest_sha = data.get("sha", "")
-    except Exception:
-        # Offline or GitHub API rate-limited — skip silently
-        return False
-
-    current_sha = _get_installed_sha()
-    if latest_sha and latest_sha != current_sha:
-        if not quiet:
-            try:
-                from rich.console import Console
-                Console().print("🔄 [bold cyan]AlpieCode auto-updater:[bold cyan] New updates found on GitHub! Upgrading...", highlight=False)
-            except ImportError:
-                print("🔄 AlpieCode auto-updater: New updates found on GitHub! Upgrading...")
-
-        # Determine python / uv executable
-        repo_url = "git+https://github.com/169Pi/AlpieCode.git@main"
-        
-        # Try uv pip install --upgrade --no-cache first
-        cmd = ["uv", "pip", "install", "--upgrade", "--no-cache", "--quiet", repo_url]
-        try:
-            res = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-            if res.returncode != 0:
-                # Fallback to sys.executable -m pip install --upgrade --no-cache-dir
-                cmd = [sys.executable, "-m", "pip", "install", "--upgrade", "--no-cache-dir", "--quiet", repo_url]
-                subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-        except Exception:
-            pass
-
-        _save_cache(latest_sha)
-        if not quiet:
-            try:
-                from rich.console import Console
-                Console().print("✨ [bold green]Updated successfully![/bold green]\n", highlight=False)
-            except ImportError:
-                print("✨ Updated successfully!\n")
-        return True
-
-    _save_cache(latest_sha or current_sha)
-    return False
+    # Launch background thread so startup is INSTANT (< 10ms)
+    thread = threading.Thread(target=_bg_update_worker, args=(quiet,), daemon=True)
+    thread.start()
+    return True
