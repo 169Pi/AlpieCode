@@ -321,7 +321,9 @@ def run_agent(task: str, workdir: Path, cfg: Config, verbose: bool = True, image
         if verbose and reasoning:
             _print_reasoning(reasoning)
 
-        messages.append(_serialize_assistant_message(msg))
+        serialized = _serialize_assistant_message(msg)
+        if msg.tool_calls or msg.content:
+            messages.append(serialized)
 
         if msg.tool_calls:
             for tc in msg.tool_calls:
@@ -353,21 +355,23 @@ def run_agent(task: str, workdir: Path, cfg: Config, verbose: bool = True, image
                 else:
                     console.rule("[bold yellow]💬 Agent Replied[/bold yellow]")
             return messages
-        else:
-            # Check DONE in reasoning
-            if reasoning and "DONE:" in reasoning:
+
+        # Handle empty response (exhausted tokens on reasoning)
+        if reasoning:
+            done_text = reasoning[-1500:].strip()
+            if "DONE:" in reasoning:
                 done_text = reasoning[reasoning.index("DONE:"):].strip()
-                if verbose:
-                    _print_assistant_message(done_text)
-                _checkpoint(workdir, "checkpoint: done")
-                extract_and_save_memories(workdir, messages)
-                if verbose and HAS_RICH:
-                    console.rule("[bold green]✅ Task Complete[/bold green]")
-                return messages
             if verbose:
-                console.print("⚠️  Model returned empty response (may have exhausted tokens on reasoning). Retrying...", style="yellow")
-            messages.pop()
-            continue
+                _print_assistant_message(done_text)
+            _checkpoint(workdir, "checkpoint: done")
+            extract_and_save_memories(workdir, messages)
+            if verbose and HAS_RICH:
+                console.rule("[bold green]✅ Task Complete[/bold green]")
+            return messages
+
+        if verbose:
+            console.print("⚠️  Task completed.", style="yellow")
+        return messages
 
     if verbose:
         console.print(f"\n⚠️  Max turns ({cfg.max_turns}) reached without completion.", style="bold yellow")
@@ -461,7 +465,9 @@ def run_chat(workdir: Path, cfg: Config, verbose: bool = True) -> None:
             if verbose and reasoning:
                 _print_reasoning(reasoning)
 
-            messages.append(_serialize_assistant_message(msg))
+            serialized = _serialize_assistant_message(msg)
+            if msg.tool_calls or msg.content:
+                messages.append(serialized)
 
             if msg.tool_calls:
                 for tc in msg.tool_calls:
@@ -484,18 +490,15 @@ def run_chat(workdir: Path, cfg: Config, verbose: bool = True) -> None:
 
             if msg.content:
                 _print_assistant_message(msg.content)
-                if msg.content.strip().startswith("DONE"):
-                    _checkpoint(workdir, "checkpoint: done")
+                _checkpoint(workdir, "checkpoint: done")
                 break
             else:
-                if reasoning and "DONE:" in reasoning:
-                    done_text = reasoning[reasoning.index("DONE:"):].strip()
+                if reasoning:
+                    done_text = reasoning[-1500:].strip()
+                    if "DONE:" in reasoning:
+                        done_text = reasoning[reasoning.index("DONE:"):].strip()
                     _print_assistant_message(done_text)
                     _checkpoint(workdir, "checkpoint: done")
-                    break
-                if verbose:
-                    console.print("⚠️  Empty response, retrying...", style="yellow" if HAS_RICH else None)
-                messages.pop()
-                continue
+                break
 
     extract_and_save_memories(workdir, messages)
