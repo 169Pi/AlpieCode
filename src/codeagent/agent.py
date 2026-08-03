@@ -62,6 +62,18 @@ Use the update_plan tool to record this.
 - Use bash for running tests, builds, git operations, and inspections
 - Check exit codes — a passing command has exit_code 0
 - Run tests after every significant change to verify you haven't broken anything
+- Your bash commands run with /bin/bash (not /bin/sh), and the project's .venv/bin \
+  is automatically prepended to PATH — so `python`, `pytest`, etc. resolve to the \
+  venv copies without needing `source activate`
+
+## Python environment — IMPORTANT
+- This workspace uses **uv** for virtual environment and package management
+- **NEVER use pip, pip3, or python -m pip** — always use `uv pip install <pkg>`
+- If the project has a .venv directory, it is already activated in your shell PATH
+- If there is NO .venv, create one first: `uv venv` then `uv pip install -e .`
+- To install a missing package (e.g. pytest): `uv pip install pytest`
+- To run tests: `python -m pytest` or `pytest` (NOT `python3 -m pytest`)
+- The venv python is at `.venv/bin/python` — you do NOT need to specify the full path
 
 ## Engineering discipline
 - Prefer minimal, targeted edits over full rewrites

@@ -46,6 +46,7 @@ SAFE_PREFIXES = [
     "tree", "sort", "uniq", "cut", "awk", "sed -n", "diff",
     "env", "printenv", "set",
     "type", "command -v",
+    "uv pip install", "uv pip", "uv venv", "uv run", "uv sync",
 ]
 
 # Commands that are potentially destructive but commonly used
@@ -54,7 +55,6 @@ WARNING_PATTERNS = [
     r"\bchmod\b", r"\bchown\b",
     r"\bpip install\b", r"\bpip3 install\b",
     r"\bnpm install\b", r"\byarn add\b", r"\bpnpm add\b",
-    r"\buv pip install\b",
     r"\bgit add\b", r"\bgit commit\b", r"\bgit push\b",
     r"\bgit checkout\b", r"\bgit reset\b", r"\bgit rebase\b",
     r"\bgit merge\b", r"\bgit stash\b",

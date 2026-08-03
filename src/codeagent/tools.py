@@ -215,8 +215,23 @@ TOOLS = [
 
 # ── Tool implementations ──────────────────────────────────────────────
 
+def _build_venv_env(workdir: Path) -> dict:
+    """Build an environment dict with .venv/bin prepended to PATH."""
+    env = os.environ.copy()
+    venv_bin = workdir / ".venv" / "bin"
+    if venv_bin.is_dir():
+        env["PATH"] = str(venv_bin) + ":" + env.get("PATH", "")
+        env["VIRTUAL_ENV"] = str(workdir / ".venv")
+        # Remove PYTHONHOME if set — it breaks venvs
+        env.pop("PYTHONHOME", None)
+    return env
+
+
 def _bash(workdir: Path, command: str) -> str:
-    """Run a shell command with guardian safety gate."""
+    """Run a shell command with guardian safety gate.
+
+    Uses /bin/bash (not /bin/sh) and auto-activates .venv if present.
+    """
     if not gate_command(command, auto_approve=True):
         return json.dumps({
             "stdout": "",
@@ -224,8 +239,10 @@ def _bash(workdir: Path, command: str) -> str:
             "exit_code": -1,
         })
     try:
+        env = _build_venv_env(workdir)
         result = subprocess.run(
-            command, shell=True, cwd=workdir, capture_output=True, text=True, timeout=120
+            ["bash", "-c", command],
+            cwd=workdir, capture_output=True, text=True, timeout=120, env=env,
         )
         return json.dumps({
             "stdout": result.stdout[-4000:],
