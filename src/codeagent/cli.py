@@ -48,19 +48,23 @@ def main():
     run_p = sub.add_parser("run", help="Run a coding task against a repository")
     run_p.add_argument("task", help="Natural-language task description")
     run_p.add_argument("--workdir", default=".", help="Repo directory (default: current dir)")
+    run_p.add_argument("--image", default=None, help="Path to an image file for vision analysis")
     run_p.add_argument("--max-turns", type=int, default=None, help="Override max turns")
+    run_p.add_argument("--no-thinking", action="store_true", help="Disable VLM reasoning/thinking mode")
     run_p.add_argument("--quiet", action="store_true", help="Suppress per-turn logging")
 
     # ── chat ──
     chat_p = sub.add_parser("chat", help="Interactive chat mode with AlpieCode")
     chat_p.add_argument("--workdir", default=".", help="Repo directory (default: current dir)")
     chat_p.add_argument("--max-turns", type=int, default=None, help="Override max turns per message")
+    chat_p.add_argument("--no-thinking", action="store_true", help="Disable VLM reasoning/thinking mode")
     chat_p.add_argument("--quiet", action="store_true", help="Suppress per-turn logging")
 
     # ── plan ──
     plan_p = sub.add_parser("plan", help="Generate a plan without making changes (read-only)")
     plan_p.add_argument("task", help="Natural-language task to plan for")
     plan_p.add_argument("--workdir", default=".", help="Repo directory (default: current dir)")
+    plan_p.add_argument("--image", default=None, help="Path to an image file for vision analysis")
 
     # ── diff ──
     diff_p = sub.add_parser("diff", help="Show changes AlpieCode has made since last checkpoint")
@@ -78,12 +82,15 @@ def main():
 
     cfg = load_config()
 
+    if getattr(args, "no_thinking", False):
+        cfg.enable_thinking = False
+
     if args.command == "run":
         if args.max_turns:
             cfg.max_turns = args.max_turns
         _show_banner()
         from .agent import run_agent
-        run_agent(args.task, Path(args.workdir), cfg, verbose=not args.quiet)
+        run_agent(args.task, Path(args.workdir), cfg, verbose=not args.quiet, image_path=args.image)
 
     elif args.command == "chat":
         if args.max_turns:
@@ -94,7 +101,6 @@ def main():
 
     elif args.command == "plan":
         _show_banner()
-        # Plan mode: prepend instruction to only plan, not edit
         plan_task = (
             f"PLANNING ONLY — Do NOT make any file edits. "
             f"Analyze the codebase and create a detailed implementation plan for the following task. "
@@ -104,7 +110,7 @@ def main():
             f"Task: {args.task}"
         )
         from .agent import run_agent
-        run_agent(plan_task, Path(args.workdir), cfg, verbose=True)
+        run_agent(plan_task, Path(args.workdir), cfg, verbose=True, image_path=args.image)
 
     elif args.command == "diff":
         workdir = Path(args.workdir).resolve()

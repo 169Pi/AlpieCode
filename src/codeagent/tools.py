@@ -210,6 +210,23 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "view_image",
+            "description": (
+                "Inspect an image file (.png, .jpg, .jpeg, .webp, .gif, .svg) in the repository. "
+                "Encodes and returns image description / metadata for visual analysis."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Relative path to the image file"},
+                },
+                "required": ["path"],
+            },
+        },
+    },
 ]
 
 
@@ -481,6 +498,25 @@ def _update_plan(workdir: Path, plan: str) -> str:
     return f"plan saved to .alpiecode_plan.md"
 
 
+def _view_image(workdir: Path, path: str) -> str:
+    """Inspect and return metadata + base64 data for an image file."""
+    target = workdir / path
+    if not target.exists():
+        return f"error: image file not found: {path}"
+    
+    import base64
+    ext = target.suffix.lower().lstrip(".")
+    mime_type = f"image/{'jpeg' if ext in ('jpg', 'jpeg') else ext}"
+    
+    try:
+        size = target.stat().st_size
+        encoded = base64.b64encode(target.read_bytes()).decode("utf-8")
+        # Truncate string for string representation, model will get image context
+        return f"[Image {path} | Type: {mime_type} | Size: {size} bytes | Base64 Length: {len(encoded)}]"
+    except Exception as e:
+        return f"error reading image: {e}"
+
+
 # ── Dispatch factory ──────────────────────────────────────────────────
 
 def make_dispatch(workdir: Path):
@@ -498,4 +534,5 @@ def make_dispatch(workdir: Path):
         "fetch_url": lambda a: _fetch_url(a["url"]),
         "request_user_input": lambda a: _request_user_input(a["question"]),
         "update_plan": lambda a: _update_plan(workdir, a["plan"]),
+        "view_image": lambda a: _view_image(workdir, a["path"]),
     }

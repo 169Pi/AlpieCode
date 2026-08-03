@@ -22,6 +22,7 @@ DEFAULTS = {
     "max_turns": 25,
     "temperature": 0.6,
     "max_tokens": 8192,
+    "enable_thinking": True,
 }
 
 
@@ -33,6 +34,7 @@ class Config:
     max_turns: int = 25
     temperature: float = 0.6
     max_tokens: int = 8192
+    enable_thinking: bool = True
 
 
 def load_config() -> Config:

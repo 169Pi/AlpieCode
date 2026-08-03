@@ -228,7 +228,7 @@ def _build_system_prompt(workdir: Path) -> str:
 
 # ── Main agent loop ───────────────────────────────────────────────────
 
-def run_agent(task: str, workdir: Path, cfg: Config, verbose: bool = True) -> list:
+def run_agent(task: str, workdir: Path, cfg: Config, verbose: bool = True, image_path: str = None) -> list:
     workdir = workdir.resolve()
     _ensure_git(workdir)
 
@@ -239,9 +239,22 @@ def run_agent(task: str, workdir: Path, cfg: Config, verbose: bool = True) -> li
     )
     dispatch = make_dispatch(workdir)
 
+    user_content = task
+    if image_path:
+        img_file = workdir / image_path if not Path(image_path).is_absolute() else Path(image_path)
+        if img_file.exists():
+            import base64
+            ext = img_file.suffix.lower().lstrip(".")
+            mime = f"image/{'jpeg' if ext in ('jpg', 'jpeg') else ext}"
+            b64_data = base64.b64encode(img_file.read_bytes()).decode("utf-8")
+            user_content = [
+                {"type": "text", "text": task},
+                {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64_data}"}},
+            ]
+
     messages = [
         {"role": "system", "content": _build_system_prompt(workdir)},
-        {"role": "user", "content": task},
+        {"role": "user", "content": user_content},
     ]
     _checkpoint(workdir, "checkpoint: start")
 
@@ -249,9 +262,12 @@ def run_agent(task: str, workdir: Path, cfg: Config, verbose: bool = True) -> li
         if HAS_RICH:
             console.rule("[bold blue]Agent Started[/bold blue]")
             console.print(f"📋 Task: {task}", style="bold")
+            if image_path:
+                console.print(f"🖼️  Image: {image_path}", style="cyan")
             console.print(f"📂 Workdir: {workdir}", style="dim")
             console.print(f"🌐 Endpoint: {cfg.base_url}", style="dim")
             console.print(f"🤖 Model: {cfg.model}", style="dim")
+            console.print(f"🧠 Reasoning: {'ON' if cfg.enable_thinking else 'OFF'}", style="dim")
             console.print(f"🔧 Tools: {len(TOOLS)} available", style="dim")
         else:
             console.rule("Agent Started")
@@ -279,7 +295,7 @@ def run_agent(task: str, workdir: Path, cfg: Config, verbose: bool = True) -> li
                 tool_choice="auto",
                 temperature=cfg.temperature,
                 max_tokens=cfg.max_tokens,
-                extra_body={"chat_template_kwargs": {"enable_thinking": True}},
+                extra_body={"chat_template_kwargs": {"enable_thinking": cfg.enable_thinking}},
             )
         except Exception as e:
             if verbose:
@@ -419,7 +435,7 @@ def run_chat(workdir: Path, cfg: Config, verbose: bool = True) -> None:
                     tool_choice="auto",
                     temperature=cfg.temperature,
                     max_tokens=cfg.max_tokens,
-                    extra_body={"chat_template_kwargs": {"enable_thinking": True}},
+                    extra_body={"chat_template_kwargs": {"enable_thinking": cfg.enable_thinking}},
                 )
             except Exception as e:
                 console.print(f"❌ API error: {e}", style="bold red" if HAS_RICH else None)
