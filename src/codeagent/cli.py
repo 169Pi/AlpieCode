@@ -46,6 +46,7 @@ def main():
     common.add_argument("--image", default=None, help="Path to an image file for vision analysis")
     common.add_argument("--max-turns", type=int, default=None, help="Override max turns")
     common.add_argument("--no-thinking", action="store_true", help="Disable VLM reasoning/thinking mode")
+    common.add_argument("--no-update", action="store_true", help="Skip automatic update check")
     common.add_argument("--quiet", action="store_true", help="Suppress per-turn logging")
 
     parser = argparse.ArgumentParser(
@@ -81,6 +82,14 @@ def main():
     if args.command == "init":
         interactive_init()
         return
+
+    # Check for auto-updates from GitHub in background
+    if not getattr(args, "no_update", False):
+        try:
+            from .updater import auto_update
+            auto_update(quiet=getattr(args, "quiet", False))
+        except Exception:
+            pass
 
     cfg = load_config()
 
