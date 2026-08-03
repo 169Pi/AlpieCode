@@ -24,7 +24,7 @@ Guidelines:
 - Start by listing files to understand the project structure
 - Prefer minimal, targeted edits over full rewrites
 - Always verify your changes with a test or command before finishing
-- When the task is complete and verified, respond with a final message starting with "DONE:" summarizing the change
+- IMPORTANT: When the task is complete, you MUST respond with a short text message (not a tool call) that starts with the word DONE: followed by a brief summary. Keep your final answer concise.
 """
 
 # ── Rich console setup ────────────────────────────────────────────────
@@ -255,7 +255,15 @@ def run_agent(task: str, workdir: Path, cfg: Config, verbose: bool = True) -> li
                     console.rule("[bold green]✅ Task Complete[/bold green]")
                 return messages
         else:
-            # Model returned empty content and no tool calls — might have used all tokens on thinking
+            # Model returned empty content — check if DONE is in reasoning (common issue)
+            if reasoning and "DONE:" in reasoning:
+                done_text = reasoning[reasoning.index("DONE:"):].strip()
+                if verbose:
+                    _print_assistant_message(done_text)
+                _checkpoint(workdir, "checkpoint: done")
+                if verbose and HAS_RICH:
+                    console.rule("[bold green]✅ Task Complete[/bold green]")
+                return messages
             if verbose:
                 console.print("⚠️  Model returned empty response (may have exhausted tokens on reasoning). Retrying...", style="yellow")
             # Remove the empty assistant message and retry
@@ -375,6 +383,12 @@ def run_chat(workdir: Path, cfg: Config, verbose: bool = True) -> None:
                     _checkpoint(workdir, "checkpoint: done")
                 break
             else:
+                # Check if DONE is in reasoning (model sometimes puts it there)
+                if reasoning and "DONE:" in reasoning:
+                    done_text = reasoning[reasoning.index("DONE:"):].strip()
+                    _print_assistant_message(done_text)
+                    _checkpoint(workdir, "checkpoint: done")
+                    break
                 if verbose:
                     console.print("⚠️  Empty response, retrying...", style="yellow" if HAS_RICH else None)
                 messages.pop()
