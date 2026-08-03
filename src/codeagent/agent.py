@@ -81,6 +81,12 @@ Use the update_plan tool to record this.
 - Add proper error handling, not bare excepts
 - Write clear commit messages and code comments where non-obvious
 
+## Building Interactive Applications & Games
+- **Non-blocking I/O**: Real-time terminal apps and games must NEVER use blocking input calls (like `std::cin >> x`, `scanf`, or blocking `getchar()`) inside the game loop — that freezes execution waiting for the Enter key!
+- On Linux/macOS, use `ncurses` or `termios` in raw non-blocking mode with `select()` / `fcntl(O_NONBLOCK)`. On Windows, use `<conio.h>` with `_kbhit()` and `_getch()`.
+- **Frame Timing**: Maintain a consistent game loop with proper frame delay (e.g. `std::this_thread::sleep_for(std::chrono::milliseconds(33))` for 30 FPS).
+- **GUI Options**: If asked for a graphical game, prefer lightweight, clean libraries (e.g., Python `pygame`/`tkinter`, Web HTML5 Canvas, C++ `Raylib`/`SFML`/`SDL2`) or clean ANSI escape terminal graphics.
+
 ## Diagnosing a failure
 When a test or build fails:
 1. Read the full error output carefully
