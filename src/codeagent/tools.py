@@ -233,13 +233,15 @@ TOOLS = [
 # ── Tool implementations ──────────────────────────────────────────────
 
 def _build_venv_env(workdir: Path) -> dict:
-    """Build an environment dict with .venv/bin prepended to PATH."""
+    """Build an environment dict with .venv/bin (or .venv/Scripts on Windows) prepended to PATH."""
     env = os.environ.copy()
-    venv_bin = workdir / ".venv" / "bin"
+    venv_bin = workdir / ".venv" / ("Scripts" if os.name == "nt" else "bin")
+    if not venv_bin.is_dir():
+        venv_bin = workdir / ".venv" / ("bin" if os.name == "nt" else "Scripts")
     if venv_bin.is_dir():
-        env["PATH"] = str(venv_bin) + ":" + env.get("PATH", "")
+        path_sep = ";" if os.name == "nt" else ":"
+        env["PATH"] = str(venv_bin) + path_sep + env.get("PATH", "")
         env["VIRTUAL_ENV"] = str(workdir / ".venv")
-        # Remove PYTHONHOME if set — it breaks venvs
         env.pop("PYTHONHOME", None)
     return env
 
@@ -247,7 +249,7 @@ def _build_venv_env(workdir: Path) -> dict:
 def _bash(workdir: Path, command: str) -> str:
     """Run a shell command with guardian safety gate.
 
-    Uses /bin/bash (not /bin/sh) and auto-activates .venv if present.
+    Cross-platform support for Linux, macOS, and native Windows.
     """
     if not gate_command(command, auto_approve=True):
         return json.dumps({
@@ -256,9 +258,22 @@ def _bash(workdir: Path, command: str) -> str:
             "exit_code": -1,
         })
     try:
+        import shutil
         env = _build_venv_env(workdir)
+
+        # Cross-platform shell resolution
+        if shutil.which("bash"):
+            shell_cmd = ["bash", "-c", command]
+        elif os.name == "nt":
+            if shutil.which("powershell"):
+                shell_cmd = ["powershell", "-NoProfile", "-Command", command]
+            else:
+                shell_cmd = ["cmd.exe", "/c", command]
+        else:
+            shell_cmd = ["/bin/sh", "-c", command]
+
         result = subprocess.run(
-            ["bash", "-c", command],
+            shell_cmd,
             cwd=workdir, capture_output=True, text=True, timeout=120, env=env,
         )
         return json.dumps({
