@@ -87,6 +87,10 @@ Use the update_plan tool to record this.
 - **Frame Timing**: Maintain a consistent game loop with proper frame delay (e.g. `std::this_thread::sleep_for(std::chrono::milliseconds(33))` for 30 FPS).
 - **GUI Options**: If asked for a graphical game, prefer lightweight, clean libraries (e.g., Python `pygame`/`tkinter`, Web HTML5 Canvas, C++ `Raylib`/`SFML`/`SDL2`) or clean ANSI escape terminal graphics.
 
+## C++ & Strongly-Typed Languages Discipline
+- **Type Precision**: NEVER assign decimal floating-point literals (e.g. `0.15`, `-4.5`, `0.8`) to integer types (`int`). Always use `double` or `float` for physics, velocities, gravity, frame rates, and coordinates to prevent implicit integer truncation to `0`!
+- **Compiler Flags**: Always compile C/C++ with `-Wall -Wextra` to catch implicit type conversion warnings during build verification.
+
 ## Diagnosing a failure
 When a test or build fails:
 1. Read the full error output carefully
