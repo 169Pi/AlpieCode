@@ -19,9 +19,9 @@ DEFAULTS = {
     "base_url": "http://20.245.200.125:8000/v1",
     "model": "169Pi/grpo_phase_2_merged",
     "api_key": "not-needed",
-    "max_turns": 25,
-    "temperature": 0.6,
-    "max_tokens": 8192,
+    "max_turns": 30,
+    "temperature": 0.2,
+    "max_tokens": 16384,
     "enable_thinking": True,
 }
 
@@ -31,9 +31,9 @@ class Config:
     base_url: str
     model: str
     api_key: str
-    max_turns: int = 25
-    temperature: float = 0.6
-    max_tokens: int = 8192
+    max_turns: int = 30
+    temperature: float = 0.2
+    max_tokens: int = 16384
     enable_thinking: bool = True
 
 

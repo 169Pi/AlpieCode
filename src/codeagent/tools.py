@@ -246,6 +246,25 @@ def _build_venv_env(workdir: Path) -> dict:
     return env
 
 
+def _smart_truncate(text: str, max_chars: int = 6000) -> str:
+    """Truncate long output keeping both head and tail (where errors usually are).
+
+    Compiler errors appear at the top (file:line: error: ...) while the
+    bottom often has summary counts. Keeping both ends gives the model
+    far better error visibility than tail-only truncation.
+    """
+    if len(text) <= max_chars:
+        return text
+    head_size = int(max_chars * 0.6)  # 60% head — where real errors live
+    tail_size = max_chars - head_size  # 40% tail — summaries and counts
+    omitted = len(text) - head_size - tail_size
+    return (
+        text[:head_size]
+        + f"\n\n... [{omitted} chars omitted] ...\n\n"
+        + text[-tail_size:]
+    )
+
+
 def _bash(workdir: Path, command: str) -> str:
     """Run a shell command with guardian safety gate.
 
@@ -274,15 +293,29 @@ def _bash(workdir: Path, command: str) -> str:
 
         result = subprocess.run(
             shell_cmd,
-            cwd=workdir, capture_output=True, text=True, timeout=120, env=env,
+            cwd=workdir, capture_output=True, text=True, timeout=300, env=env,
         )
-        return json.dumps({
-            "stdout": result.stdout[-4000:],
-            "stderr": result.stderr[-2000:],
+
+        stdout = _smart_truncate(result.stdout, 6000)
+        stderr = _smart_truncate(result.stderr, 4000)
+
+        output = json.dumps({
+            "stdout": stdout,
+            "stderr": stderr,
             "exit_code": result.returncode,
         })
+
+        # Inject clear error signal for failed commands
+        if result.returncode != 0:
+            output = (
+                f"⚠️ COMMAND FAILED (exit_code={result.returncode}). "
+                f"Read the error output carefully and fix the ROOT CAUSE.\n"
+                + output
+            )
+
+        return output
     except subprocess.TimeoutExpired:
-        return json.dumps({"stdout": "", "stderr": "Command timed out after 120s", "exit_code": -1})
+        return json.dumps({"stdout": "", "stderr": "Command timed out after 300s", "exit_code": -1})
 
 
 def _read_file(workdir: Path, path: str, start_line: int = None, end_line: int = None) -> str:
