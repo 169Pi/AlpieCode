@@ -189,6 +189,12 @@ Before saying DONE, verify your work. The strategy depends on what you built:
 - Use proper exit codes (0 = success, non-zero = error)
 - Include help text and usage information
 
+### GitHub & Open Source Repositories
+- Use `github_issues` to list issues/PRs or fetch full details of a specific issue to understand reported bugs
+- Use `github_browse` to explore open-source repository structures, tree listings, and individual files without downloading
+- Use `clone_repo` when you need to clone an open-source project locally for deep editing, running tests, or building
+- When analyzing a GitHub bug report: read the issue description + comments first, identify reproduction steps, then explore relevant codebase files before proposing or writing a solution
+
 ## Diagnosing a failure
 When a test or build fails:
 1. Read the full error output carefully
@@ -341,7 +347,8 @@ def _build_system_prompt(workdir: Path) -> str:
 # ── Main agent loop ───────────────────────────────────────────────────
 
 def run_agent(task: str, workdir: Path, cfg: Config, verbose: bool = True,
-              image_path: str = None, video_path: str = None, url: str = None) -> list:
+              image_path: str = None, video_path: str = None, url: str = None,
+              github_repo: str = None) -> list:
     workdir = workdir.resolve()
     _ensure_git(workdir)
 
@@ -351,6 +358,11 @@ def run_agent(task: str, workdir: Path, cfg: Config, verbose: bool = True,
         timeout=httpx.Timeout(60.0, connect=5.0),
     )
     dispatch = make_dispatch(workdir)
+
+    # If --github repo provided, append repo context to task
+    if github_repo:
+        repo_clean = github_repo.replace("https://github.com/", "").strip("/")
+        task = f"Target GitHub Repository: {repo_clean}\n\nTask: {task}"
 
     # Build multimodal content if media is provided
     from .media import build_media_content
@@ -371,7 +383,9 @@ def run_agent(task: str, workdir: Path, cfg: Config, verbose: bool = True,
     if verbose:
         if HAS_RICH:
             console.rule("[bold blue]Agent Started[/bold blue]")
-            console.print(f"📋 Task: {task}", style="bold")
+            console.print(f"📋 Task: {task.splitlines()[0]}", style="bold")
+            if github_repo:
+                console.print(f"🐙 GitHub Repo: {github_repo}", style="cyan")
             if image_path:
                 console.print(f"🖼️  Image: {image_path}", style="cyan")
             if video_path:
@@ -385,7 +399,7 @@ def run_agent(task: str, workdir: Path, cfg: Config, verbose: bool = True,
             console.print(f"🔧 Tools: {len(TOOLS)} available", style="dim")
         else:
             console.rule("Agent Started")
-            console.print(f"📋 Task: {task}")
+            console.print(f"📋 Task: {task.splitlines()[0]}")
             console.print(f"📂 Workdir: {workdir}")
 
     compile_fail_counts = {}  # Track compilation failures per file

@@ -54,7 +54,7 @@ def _normalize_args():
             arg = sub_args[i]
             if arg.startswith("-"):
                 flags.append(arg)
-                if arg in ("--workdir", "--image", "--video", "--url", "--max-turns") and i + 1 < len(sub_args):
+                if arg in ("--workdir", "--image", "--video", "--url", "--github", "--max-turns") and i + 1 < len(sub_args):
                     flags.append(sub_args[i + 1])
                     i += 1
             else:
@@ -72,6 +72,7 @@ def main():
     common.add_argument("--image", default=None, help="Path to an image file for vision analysis")
     common.add_argument("--video", default=None, help="Path to a video file for multimodal analysis")
     common.add_argument("--url", default=None, help="YouTube URL for video analysis")
+    common.add_argument("--github", default=None, help="GitHub repository (e.g. owner/repo or URL) for open-source analysis")
     common.add_argument("--max-turns", type=int, default=None, help="Override max turns")
     common.add_argument("--no-thinking", action="store_true", help="Disable VLM reasoning/thinking mode")
     common.add_argument("--no-update", action="store_true", help="Skip automatic update check")
@@ -135,6 +136,7 @@ def main():
             image_path=args.image,
             video_path=getattr(args, "video", None),
             url=getattr(args, "url", None),
+            github_repo=getattr(args, "github", None),
         )
 
     elif args.command == "chat":
@@ -160,6 +162,7 @@ def main():
             image_path=args.image,
             video_path=getattr(args, "video", None),
             url=getattr(args, "url", None),
+            github_repo=getattr(args, "github", None),
         )
 
     elif args.command == "diff":

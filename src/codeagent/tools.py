@@ -231,6 +231,71 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "github_issues",
+            "description": (
+                "Fetch issues and pull requests from a GitHub repository. "
+                "Can list issues or get full details of a specific issue including comments. "
+                "Use this to understand bugs, feature requests, and discussions in open-source projects."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "owner": {"type": "string", "description": "Repository owner (e.g., 'pytorch')"},
+                    "repo": {"type": "string", "description": "Repository name (e.g., 'pytorch')"},
+                    "issue_number": {"type": "integer", "description": "Specific issue number to get full details (optional)"},
+                    "state": {"type": "string", "description": "Filter by state: 'open', 'closed', or 'all' (default: 'open')"},
+                    "max_results": {"type": "integer", "description": "Max issues to return (default: 10, max: 30)"},
+                },
+                "required": ["owner", "repo"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "github_browse",
+            "description": (
+                "Browse a GitHub repository's structure, files, and metadata without cloning. "
+                "Can list directory contents or read a specific file directly from GitHub. "
+                "Use this for quick exploration before deciding whether to clone."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "owner": {"type": "string", "description": "Repository owner (e.g., 'facebook')"},
+                    "repo": {"type": "string", "description": "Repository name (e.g., 'react')"},
+                    "path": {"type": "string", "description": "File or directory path to browse (default: root)"},
+                    "info_only": {"type": "boolean", "description": "If true, return only repo metadata (stars, description, etc.)"},
+                },
+                "required": ["owner", "repo"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "clone_repo",
+            "description": (
+                "Clone a GitHub repository into the working directory for deep analysis, editing, and testing. "
+                "Use github_browse first for quick exploration; only clone when you need to make edits or run tests. "
+                "Clones with --depth 1 (shallow) to save time and disk space."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "repo_url": {
+                        "type": "string",
+                        "description": "GitHub repo URL or owner/repo shorthand (e.g., 'pytorch/pytorch' or 'https://github.com/pytorch/pytorch')",
+                    },
+                    "branch": {"type": "string", "description": "Branch to clone (default: main/master)"},
+                },
+                "required": ["repo_url"],
+            },
+        },
+    },
 ]
 
 
@@ -569,6 +634,37 @@ def _view_image(workdir: Path, path: str) -> str:
         return f"error reading image: {e}"
 
 
+# ── GitHub tool implementations ───────────────────────────────────────
+
+def _github_issues(owner: str, repo: str, issue_number: int = None,
+                   state: str = "open", max_results: int = 10) -> str:
+    """Fetch issues/PRs from a GitHub repo."""
+    from .github import fetch_issues, fetch_issue_detail
+    if issue_number:
+        return fetch_issue_detail(owner, repo, issue_number)
+    return fetch_issues(owner, repo, state=state, max_results=max_results)
+
+
+def _github_browse(owner: str, repo: str, path: str = "",
+                   info_only: bool = False) -> str:
+    """Browse a GitHub repo's structure and files."""
+    from .github import fetch_repo_info, fetch_repo_tree
+    if info_only:
+        return fetch_repo_info(owner, repo)
+    if path:
+        return fetch_repo_tree(owner, repo, path)
+    # Return repo info + root tree
+    info = fetch_repo_info(owner, repo)
+    tree = fetch_repo_tree(owner, repo)
+    return f"=== Repository Info ===\n{info}\n\n=== Root Directory ===\n{tree}"
+
+
+def _clone_repo(workdir: Path, repo_url: str, branch: str = None) -> str:
+    """Clone a GitHub repo into the workdir."""
+    from .github import clone_repo
+    return clone_repo(repo_url, workdir, branch=branch)
+
+
 # ── Dispatch factory ──────────────────────────────────────────────────
 
 def make_dispatch(workdir: Path):
@@ -587,4 +683,19 @@ def make_dispatch(workdir: Path):
         "request_user_input": lambda a: _request_user_input(a["question"]),
         "update_plan": lambda a: _update_plan(workdir, a["plan"]),
         "view_image": lambda a: _view_image(workdir, a["path"]),
+        "github_issues": lambda a: _github_issues(
+            a["owner"], a["repo"],
+            issue_number=a.get("issue_number"),
+            state=a.get("state", "open"),
+            max_results=a.get("max_results", 10),
+        ),
+        "github_browse": lambda a: _github_browse(
+            a["owner"], a["repo"],
+            path=a.get("path", ""),
+            info_only=a.get("info_only", False),
+        ),
+        "clone_repo": lambda a: _clone_repo(
+            workdir, a["repo_url"],
+            branch=a.get("branch"),
+        ),
     }
