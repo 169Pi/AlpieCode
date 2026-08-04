@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "alpiecode"
-version = "0.3.1"
+version = "0.4.0"
 description = "AlpieCode — Autonomous AI Coding Agent CLI powered by 169Pi Alpie VLM"
 requires-python = ">=3.9"
 dependencies = [
@@ -14,6 +14,9 @@ dependencies = [
     "duckduckgo-search>=7.0.0",
     "beautifulsoup4>=4.12.0",
 ]
+
+[project.optional-dependencies]
+video = ["yt-dlp>=2024.0.0"]
 
 [project.scripts]
 alpiecode = "codeagent.cli:main"

@@ -340,7 +340,8 @@ def _build_system_prompt(workdir: Path) -> str:
 
 # ── Main agent loop ───────────────────────────────────────────────────
 
-def run_agent(task: str, workdir: Path, cfg: Config, verbose: bool = True, image_path: str = None) -> list:
+def run_agent(task: str, workdir: Path, cfg: Config, verbose: bool = True,
+              image_path: str = None, video_path: str = None, url: str = None) -> list:
     workdir = workdir.resolve()
     _ensure_git(workdir)
 
@@ -351,18 +352,15 @@ def run_agent(task: str, workdir: Path, cfg: Config, verbose: bool = True, image
     )
     dispatch = make_dispatch(workdir)
 
-    user_content = task
-    if image_path:
-        img_file = workdir / image_path if not Path(image_path).is_absolute() else Path(image_path)
-        if img_file.exists():
-            import base64
-            ext = img_file.suffix.lower().lstrip(".")
-            mime = f"image/{'jpeg' if ext in ('jpg', 'jpeg') else ext}"
-            b64_data = base64.b64encode(img_file.read_bytes()).decode("utf-8")
-            user_content = [
-                {"type": "text", "text": task},
-                {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64_data}"}},
-            ]
+    # Build multimodal content if media is provided
+    from .media import build_media_content
+    user_content = build_media_content(
+        task=task,
+        image_path=image_path,
+        video_path=video_path,
+        url=url,
+        workdir=workdir,
+    )
 
     messages = [
         {"role": "system", "content": _build_system_prompt(workdir)},
@@ -376,6 +374,10 @@ def run_agent(task: str, workdir: Path, cfg: Config, verbose: bool = True, image
             console.print(f"📋 Task: {task}", style="bold")
             if image_path:
                 console.print(f"🖼️  Image: {image_path}", style="cyan")
+            if video_path:
+                console.print(f"🎬 Video: {video_path}", style="cyan")
+            if url:
+                console.print(f"📺 URL: {url}", style="cyan")
             console.print(f"📂 Workdir: {workdir}", style="dim")
             console.print(f"🌐 Endpoint: {cfg.base_url}", style="dim")
             console.print(f"🤖 Model: {cfg.model}", style="dim")

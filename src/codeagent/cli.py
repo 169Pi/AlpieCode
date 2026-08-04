@@ -54,7 +54,7 @@ def _normalize_args():
             arg = sub_args[i]
             if arg.startswith("-"):
                 flags.append(arg)
-                if arg in ("--workdir", "--image", "--max-turns") and i + 1 < len(sub_args):
+                if arg in ("--workdir", "--image", "--video", "--url", "--max-turns") and i + 1 < len(sub_args):
                     flags.append(sub_args[i + 1])
                     i += 1
             else:
@@ -70,6 +70,8 @@ def main():
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--workdir", default=".", help="Repo directory (default: current dir)")
     common.add_argument("--image", default=None, help="Path to an image file for vision analysis")
+    common.add_argument("--video", default=None, help="Path to a video file for multimodal analysis")
+    common.add_argument("--url", default=None, help="YouTube URL for video analysis")
     common.add_argument("--max-turns", type=int, default=None, help="Override max turns")
     common.add_argument("--no-thinking", action="store_true", help="Disable VLM reasoning/thinking mode")
     common.add_argument("--no-update", action="store_true", help="Skip automatic update check")
@@ -127,7 +129,13 @@ def main():
             cfg.max_turns = args.max_turns
         _show_banner()
         from .agent import run_agent
-        run_agent(args.task, Path(args.workdir), cfg, verbose=not args.quiet, image_path=args.image)
+        run_agent(
+            args.task, Path(args.workdir), cfg,
+            verbose=not args.quiet,
+            image_path=args.image,
+            video_path=getattr(args, "video", None),
+            url=getattr(args, "url", None),
+        )
 
     elif args.command == "chat":
         if args.max_turns:
@@ -147,7 +155,12 @@ def main():
             f"Task: {args.task}"
         )
         from .agent import run_agent
-        run_agent(plan_task, Path(args.workdir), cfg, verbose=True, image_path=args.image)
+        run_agent(
+            plan_task, Path(args.workdir), cfg, verbose=True,
+            image_path=args.image,
+            video_path=getattr(args, "video", None),
+            url=getattr(args, "url", None),
+        )
 
     elif args.command == "diff":
         workdir = Path(args.workdir).resolve()
