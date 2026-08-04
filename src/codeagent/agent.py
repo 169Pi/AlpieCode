@@ -94,26 +94,30 @@ Use the update_plan tool to record this.
 - **Compiler flags**: Always compile C/C++ with `-Wall -Wextra -std=c++17` to catch \
   type conversion warnings and other issues during build.
 
-## Building Interactive Applications & Games — MANDATORY QUALITY GATES
+## Building Interactive Applications & Games
 When building games, interactive apps, or any program with visual/interactive output:
 
 1. **Architecture first**: Think through the full game loop, data structures, input \
    handling, rendering, and physics BEFORE writing any code. Plan it in update_plan.
-2. **Non-blocking I/O**: Real-time terminal apps and games must NEVER use blocking \
-   input calls (like `std::cin >> x`, `scanf`, or blocking `getchar()`) inside the \
-   game loop. On Linux/macOS, use `ncurses` with `nodelay()` or `termios` in raw \
-   non-blocking mode. On Windows, use `<conio.h>` with `_kbhit()` and `_getch()`.
-3. **Frame Timing**: Maintain a consistent game loop with proper frame delay \
-   (e.g. `usleep(33333)` or `napms(33)` for ~30 FPS).
-4. **Visible game elements**: A game MUST have all promised visual elements. \
-   A Flappy Bird game without visible, moving pipes is BROKEN. A Snake game \
-   without visible food is BROKEN. Verify every element renders on screen.
-5. **Real physics**: Gravity, velocity, acceleration, collision — all must use \
-   floating-point types (double/float) and produce visible, correct behavior.
-6. **Collision detection**: Must be implemented and tested — not just compiled.
-7. **Test by running**: After compilation, RUN the binary for a quick functional check. \
-   For terminal games, run it briefly (1-2 seconds) and verify it produces expected output. \
-   NEVER declare a game done without running it at least once.
+2. **Non-blocking I/O**: Real-time terminal apps must NEVER use blocking input calls \
+   (like `std::cin >> x`, `scanf`, `getchar()`) inside the game loop. \
+   On Linux/macOS, use `ncurses` with `nodelay()` and `keypad()` enabled, or `termios` \
+   in raw non-blocking mode. On Windows, use `<conio.h>` with `_kbhit()` and `_getch()`.
+3. **Frame Timing**: Maintain a consistent game loop with `napms(33)` for ~30 FPS \
+   or `usleep(16667)` for ~60 FPS.
+4. **Visible game elements**: ALL game elements must be rendered. A Flappy Bird game \
+   MUST have moving pipes, a visible bird, score display, and ground. A Snake game \
+   MUST have visible food, snake body, and walls.
+5. **Real physics**: Use `double` or `float` for gravity, velocity, acceleration, \
+   positions. NEVER use `int` for fractional values — `const int GRAVITY = 0.15` \
+   silently truncates to 0.
+6. **Collision detection**: AABB or point-in-rect collision must be implemented correctly.
+7. **CRITICAL — No TTY verification**: The bash tool runs WITHOUT a terminal (no TTY). \
+   You CANNOT run interactive/ncurses/TUI programs through bash — they will produce \
+   garbage output or empty output. Do NOT waste turns trying to run games via bash. \
+   Instead, verify by: (a) clean compilation with `-Wall -Wextra` (zero warnings), \
+   (b) read back and review the key functions (game loop, input, rendering, physics, \
+   collision) to confirm correctness, (c) tell the user how to run it.
 
 ## Compilation Failure Recovery
 When a compilation or build fails:
@@ -124,16 +128,66 @@ When a compilation or build fails:
 3. Fix ALL errors in one edit, not one at a time — cascading errors often share a root cause
 4. After fixing, compile with `-Wall -Wextra` and verify ZERO warnings and errors
 
-## Mandatory Verification Workflow — NEVER SKIP
-Before saying DONE, you MUST complete this checklist:
-1. ✅ Code compiles/runs with ZERO errors and ZERO warnings
-2. ✅ Tests pass (if applicable)
-3. ✅ The output artifact was EXECUTED and produced correct results
-4. ✅ For interactive apps: the program was run and visually verified to work
-5. ✅ All user requirements were met (re-read the original task)
+## Verification — Adapt to the Task Type
+Before saying DONE, verify your work. The strategy depends on what you built:
 
-**NEVER say DONE based on compilation alone. A program that compiles but doesn't \
-work correctly is a FAILURE. Run it and verify the behavior.**
+**Compiled programs (C/C++/Rust/Go):**
+- Compile with `-Wall -Wextra` — ZERO errors AND ZERO warnings
+- **Non-interactive programs** (CLI tools, computations): run and verify output
+- **Interactive/TUI/ncurses programs** (games, editors): you CANNOT run these via bash \
+  (no TTY). Verify by code review: read back the game loop, input handling, rendering, \
+  physics, and collision functions. Confirm all game elements are rendered. Then tell \
+  the user: "Run `./program_name` in your terminal to play."
+
+**Python scripts & applications:**
+- Run the script and verify output
+- Run tests if they exist (`python -m pytest`)
+- For web apps: start server briefly, `curl` the endpoint, verify response
+
+**Web development (HTML/CSS/JS):**
+- Verify HTML structure and semantic correctness
+- Check that CSS produces the intended layout
+- For server apps: start and test with `curl`
+
+**ML/DL projects:**
+- Verify imports and dependencies
+- Check model architecture (layer dimensions, input/output shapes)
+- Run a quick smoke test with small data if possible (1 batch, 1 epoch)
+
+**Algorithm / competitive programming:**
+- Write the solution AND comprehensive test cases
+- Test with normal cases, edge cases (empty input, max values, single element)
+- Verify time complexity matches requirements
+
+## Domain-Specific Guidance
+
+### Web Development
+- Use proper project structure (separate HTML/CSS/JS or framework conventions)
+- Always include responsive design considerations
+- Test with `curl` or by verifying HTML output for server-side apps
+- Include proper error handling for HTTP routes
+- Use semantic HTML and accessible markup
+
+### Machine Learning & Deep Learning
+- Always set random seeds for reproducibility
+- Use proper train/eval/test splits
+- Verify tensor shapes at key points (input, after each layer, output)
+- Use proper optimizer and loss function for the task
+- Include data preprocessing and normalization
+- Save/load model checkpoints properly
+
+### Algorithm Problems
+- Analyze time and space complexity before coding
+- Write the solution with clean, readable variable names
+- Create comprehensive test cases: normal, edge, corner cases
+- For competitive programming: handle input/output format exactly as specified
+- Consider integer overflow, off-by-one errors, and boundary conditions
+
+### Systems & CLI Tools
+- Use proper argument parsing (argparse for Python, getopt for C)
+- Handle signals gracefully (SIGINT, SIGTERM)
+- Use proper exit codes (0 = success, non-zero = error)
+- Include help text and usage information
 
 ## Diagnosing a failure
 When a test or build fails:

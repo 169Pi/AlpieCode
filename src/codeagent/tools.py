@@ -28,7 +28,11 @@ TOOLS = [
             "description": (
                 "Run a shell command in the repo working directory. Returns stdout/stderr/exit_code. "
                 "Prefer file tools (read_file, edit_file) over shell for reading/writing files. "
-                "Use this for running tests, builds, git commands, and other CLI operations."
+                "Use this for running tests, builds, git commands, and other CLI operations. "
+                "IMPORTANT: Commands run WITHOUT a TTY (no terminal). Interactive programs, "
+                "ncurses/curses apps, TUI apps, and terminal games will NOT work — they produce "
+                "garbage output or hang. Do NOT attempt to run interactive programs through this tool. "
+                "For interactive apps, verify correctness via: clean compilation + code review instead."
             ),
             "parameters": {
                 "type": "object",
