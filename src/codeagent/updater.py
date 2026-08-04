@@ -16,7 +16,7 @@ from pathlib import Path
 import threading
 
 CACHE_FILE = Path.home() / ".alpiecode" / "update_cache.json"
-CHECK_INTERVAL_SECONDS = 86400  # Check at most once per 24 hours in background
+CHECK_INTERVAL_SECONDS = 3600  # Check at most once per hour in background
 
 
 def _get_installed_sha() -> str:

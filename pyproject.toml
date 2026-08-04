@@ -13,10 +13,8 @@ dependencies = [
     "rich>=13.0",
     "duckduckgo-search>=7.0.0",
     "beautifulsoup4>=4.12.0",
+    "yt-dlp>=2024.0.0",
 ]
-
-[project.optional-dependencies]
-video = ["yt-dlp>=2024.0.0"]
 
 [project.scripts]
 alpiecode = "codeagent.cli:main"
