@@ -81,17 +81,29 @@ def _get_video_duration(video_path: str) -> Optional[float]:
     return None
 
 
+def _get_ffmpeg_cmd() -> str:
+    """Get ffmpeg executable path from system PATH or bundled imageio-ffmpeg."""
+    sys_ffmpeg = shutil.which("ffmpeg")
+    if sys_ffmpeg:
+        return sys_ffmpeg
+    try:
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except (ImportError, Exception):
+        return None
+
+
 def extract_frames(video_path: str, max_frames: int = MAX_FRAMES) -> List[Tuple[str, bytes]]:
     """
-    Extract key frames from a video using ffmpeg.
+    Extract key frames from a video using ffmpeg or imageio-ffmpeg.
 
     Returns:
         List of (mime_type, raw_bytes) tuples for each extracted frame.
     """
-    if not shutil.which("ffmpeg"):
+    ffmpeg_cmd = _get_ffmpeg_cmd()
+    if not ffmpeg_cmd:
         raise RuntimeError(
-            "ffmpeg is required for video processing. "
-            "Install it with: sudo apt install ffmpeg"
+            "ffmpeg binary not found. Please ensure imageio-ffmpeg dependency is installed."
         )
 
     video_path = str(Path(video_path).resolve())
@@ -106,22 +118,23 @@ def extract_frames(video_path: str, max_frames: int = MAX_FRAMES) -> List[Tuple[
                 timestamp = interval * i
                 out_path = os.path.join(tmpdir, f"frame_{i:03d}.jpg")
                 subprocess.run(
-                    ["ffmpeg", "-ss", f"{timestamp:.2f}", "-i", video_path,
+                    [ffmpeg_cmd, "-ss", f"{timestamp:.2f}", "-i", video_path,
                      "-vframes", "1", "-q:v", str(FRAME_QUALITY // 10),
                      "-y", out_path],
                     capture_output=True, timeout=30,
                 )
                 if os.path.exists(out_path) and os.path.getsize(out_path) > 0:
                     frames.append(("image/jpeg", Path(out_path).read_bytes()))
-            return frames if frames else _extract_frames_fallback(video_path, tmpdir, max_frames)
+            return frames if frames else _extract_frames_fallback(video_path, tmpdir, max_frames, ffmpeg_cmd)
         else:
-            return _extract_frames_fallback(video_path, tmpdir, max_frames)
+            return _extract_frames_fallback(video_path, tmpdir, max_frames, ffmpeg_cmd)
 
 
-def _extract_frames_fallback(video_path: str, tmpdir: str, max_frames: int) -> List[Tuple[str, bytes]]:
+def _extract_frames_fallback(video_path: str, tmpdir: str, max_frames: int, ffmpeg_cmd: str = None) -> List[Tuple[str, bytes]]:
     """Fallback: extract frames at 1 fps and pick evenly-spaced ones."""
+    cmd = ffmpeg_cmd or _get_ffmpeg_cmd() or "ffmpeg"
     subprocess.run(
-        ["ffmpeg", "-i", video_path, "-vf", "fps=1", "-q:v", "2",
+        [cmd, "-i", video_path, "-vf", "fps=1", "-q:v", "2",
          "-y", os.path.join(tmpdir, "frame_%04d.jpg")],
         capture_output=True, timeout=120,
     )
