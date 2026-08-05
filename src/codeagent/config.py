@@ -56,10 +56,17 @@ def load_config() -> Config:
             pass
 
     # env vars override saved file
+    for prefix in ("ALPIECODE_", "CODEAGENT_"):
+        if os.environ.get(f"{prefix}BASE_URL"):
+            data["base_url"] = os.environ[f"{prefix}BASE_URL"]
+        if os.environ.get(f"{prefix}MODEL"):
+            data["model"] = os.environ[f"{prefix}MODEL"]
+        if os.environ.get(f"{prefix}MODEL_REPO"):
+            data["model_repo"] = os.environ[f"{prefix}MODEL_REPO"]
+        if os.environ.get(f"{prefix}API_KEY"):
+            data["api_key"] = os.environ[f"{prefix}API_KEY"]
     if os.environ.get("HF_TOKEN"):
         data["hf_token"] = os.environ["HF_TOKEN"]
-    if os.environ.get("ALPIECODE_MODEL_REPO"):
-        data["model_repo"] = os.environ["ALPIECODE_MODEL_REPO"]
     if os.environ.get("ALPIECODE_CPU") == "1":
         data["n_gpu_layers"] = 0
 

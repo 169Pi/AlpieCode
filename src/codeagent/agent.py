@@ -344,6 +344,49 @@ def _build_system_prompt(workdir: Path) -> str:
     return prompt
 
 
+def _parse_text_tool_calls(text: str) -> list:
+    """
+    Parse tool calls printed as text tags in model output.
+    Supports XML-style: <tool_call><function=name><parameter=k>v</parameter></function></tool_call>
+    and JSON-style: <tool_call>{"name": "...", "arguments": {...}}</tool_call>
+    """
+    if not text or "<tool_call>" not in text:
+        return []
+
+    tool_calls = []
+    blocks = re.findall(r"<tool_call>(.*?)(?:</tool_call>|$)", text, re.DOTALL)
+
+    for block in blocks:
+        block_clean = block.strip()
+        try:
+            data = json.loads(block_clean)
+            if isinstance(data, dict) and "name" in data:
+                tool_calls.append({
+                    "name": data["name"],
+                    "arguments": data.get("arguments", {})
+                })
+                continue
+        except Exception:
+            pass
+
+        fn_match = re.search(r"<function=([\w_]+)>(.*?)(?:</function>|$)", block_clean, re.DOTALL)
+        if fn_match:
+            func_name = fn_match.group(1)
+            params_body = fn_match.group(2)
+            args = {}
+            param_matches = re.findall(r"<parameter=([\w_]+)>\s*(.*?)(?=<parameter=|</parameter>|</function>|$)", params_body, re.DOTALL)
+            for key, val in param_matches:
+                val_clean = val.rstrip("</parameter>").strip()
+                args[key] = val_clean
+
+            tool_calls.append({
+                "name": func_name,
+                "arguments": args
+            })
+
+    return tool_calls
+
+
 # ── Main agent loop ───────────────────────────────────────────────────
 
 def run_agent(task: str, workdir: Path, cfg: Config, verbose: bool = True,
@@ -473,18 +516,37 @@ def run_agent(task: str, workdir: Path, cfg: Config, verbose: bool = True,
         if msg.tool_calls or msg.content:
             messages.append(serialized)
 
+        # Extract standard or text-formatted tool calls
+        raw_tool_calls = []
         if msg.tool_calls:
             for tc in msg.tool_calls:
-                args = json.loads(tc.function.arguments or "{}")
+                raw_tool_calls.append({
+                    "id": tc.id,
+                    "name": tc.function.name,
+                    "arguments": json.loads(tc.function.arguments or "{}"),
+                })
+        elif msg.content and "<tool_call>" in msg.content:
+            parsed_calls = _parse_text_tool_calls(msg.content)
+            for i, tc in enumerate(parsed_calls):
+                raw_tool_calls.append({
+                    "id": f"text_call_{i+1}",
+                    "name": tc["name"],
+                    "arguments": tc["arguments"],
+                })
+
+        if raw_tool_calls:
+            for tc in raw_tool_calls:
+                fn_name = tc["name"]
+                args = tc["arguments"]
                 if verbose:
-                    _print_tool_call(turn, tc.function.name, args)
+                    _print_tool_call(turn, fn_name, args)
                 try:
-                    result = dispatch[tc.function.name](args)
+                    result = dispatch[fn_name](args)
                 except Exception as e:
                     result = f"error: {e}"
 
                 # Track compilation failures and inject recovery hints
-                if tc.function.name == "bash":
+                if fn_name == "bash":
                     cmd = args.get("command", "")
                     is_compile = any(kw in cmd for kw in ["g++", "gcc", "clang", "make", "cmake", "cargo build", "rustc"])
                     if is_compile and "exit_code" in str(result):
@@ -512,7 +574,7 @@ def run_agent(task: str, workdir: Path, cfg: Config, verbose: bool = True,
                     _print_tool_result(result)
                 messages.append({
                     "role": "tool",
-                    "tool_call_id": tc.id,
+                    "tool_call_id": tc["id"],
                     "content": str(result),
                 })
             _checkpoint(workdir, f"checkpoint: turn {turn + 1}")
