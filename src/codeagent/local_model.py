@@ -72,25 +72,43 @@ def download_model(repo_id: str = DEFAULT_REPO, token: Optional[str] = None) -> 
             return local_files[0]
         raise RuntimeError(f"Could not connect to HuggingFace repo {repo_id}: {e}")
 
-    if not gguf_files:
-        raise RuntimeError(f"No .gguf model file found in HuggingFace repository {repo_id}")
+    # Separate main model file from mmproj (vision projector) file
+    main_gguf_files = [f for f in gguf_files if "mmproj" not in f.lower()]
+    mmproj_files = [f for f in gguf_files if "mmproj" in f.lower()]
 
-    target_file = gguf_files[0]
+    if not main_gguf_files:
+        main_gguf_files = gguf_files
+
+    target_file = main_gguf_files[0]
     cached_file = CACHE_DIR / target_file
 
-    if cached_file.exists():
-        return cached_file
+    if not cached_file.exists():
+        print(f"📥 Downloading local model from HuggingFace ({repo_id}/{target_file})...")
+        print("   This is a one-time download. Subsequent runs will work 100% offline.")
+        hf_hub_download(
+            repo_id=repo_id,
+            filename=target_file,
+            local_dir=CACHE_DIR,
+            token=hf_token,
+        )
 
-    print(f"📥 Downloading local model from HuggingFace ({repo_id}/{target_file})...")
-    print("   This is a one-time download. Subsequent runs will work 100% offline.")
+    # Download mmproj file if available (for vision features)
+    if mmproj_files:
+        mmproj_target = mmproj_files[0]
+        mmproj_cached = CACHE_DIR / mmproj_target
+        if not mmproj_cached.exists():
+            try:
+                print(f"📥 Downloading vision projector ({repo_id}/{mmproj_target})...")
+                hf_hub_download(
+                    repo_id=repo_id,
+                    filename=mmproj_target,
+                    local_dir=CACHE_DIR,
+                    token=hf_token,
+                )
+            except Exception as e:
+                print(f"⚠️ Could not download vision projector ({mmproj_target}): {e}")
 
-    local_path = hf_hub_download(
-        repo_id=repo_id,
-        filename=target_file,
-        local_dir=CACHE_DIR,
-        token=hf_token,
-    )
-    return Path(local_path)
+    return cached_file
 
 
 # ── Local Model Engine Class ──────────────────────────────────────────
