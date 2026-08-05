@@ -10,6 +10,7 @@ Implements a staff-engineer-grade autonomous coding agent:
 """
 
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -224,9 +225,9 @@ request_user_input. Don't guess on important decisions.
 
 ## Finishing
 When the task is complete and verified:
-- Respond with a short message starting with DONE: followed by a concise summary
-- Include what was changed and how it was verified
-- Keep it brief — 2-4 sentences max
+- Once all tests pass or code is verified, IMMEDIATELY output `DONE: <summary>` to complete the task.
+- Do NOT run extra or redundant manual tests after automated test suites pass cleanly.
+- Keep the summary brief — 2-4 sentences max explaining what was built and verified.
 """
 
 # ── Rich console setup ────────────────────────────────────────────────
