@@ -33,7 +33,8 @@ class TestAdd:
     def test_add_floats(self):
         """Test adding floating point numbers."""
         assert add(1.5, 2.5) == 4.0
-        assert add(0.1, 0.2) == 0.3
+        # Note: Floating point precision issue - 0.1 + 0.2 is not exactly 0.3
+        assert abs(add(0.1, 0.2) - 0.3) < 1e-10
     
     def test_add_zero(self):
         """Test adding zero."""
