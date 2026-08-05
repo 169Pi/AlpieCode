@@ -180,7 +180,7 @@ class LocalModel:
         """
         llm = self.load()
         
-        # Strip system messages or format as llama-cpp expects
+        enable_thinking = kwargs.get("enable_thinking", True)
         params = {
             "messages": messages,
             "temperature": temperature,
@@ -189,6 +189,10 @@ class LocalModel:
         if tools:
             params["tools"] = tools
             params["tool_choice"] = kwargs.get("tool_choice", "auto")
+
+        # If thinking is disabled, pass chat_template_kwargs or lower temperature for direct output
+        if not enable_thinking:
+            params["temperature"] = 0.1
 
         result_dict = llm.create_chat_completion(**params)
         return _DictWrapper(result_dict)
