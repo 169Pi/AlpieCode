@@ -20,26 +20,20 @@ DEFAULT_CTX_SIZE = 32768  # 32k tokens default for fast loading (supports up to 
 
 def detect_gpu() -> int:
     """
-    Detect if CUDA/Metal GPU is available for llama-cpp-python.
+    Detect if CUDA/Metal GPU offloading is compiled & supported in llama-cpp-python.
     Returns:
-      -1: Offload all layers to GPU if supported
+      -1: Offload all layers to GPU if CUDA/Metal is active
        0: CPU-only fallback
     """
-    # Check CUDA env or nvidia-smi
     if os.environ.get("CUDA_VISIBLE_DEVICES") == "-1":
         return 0
 
     try:
-        import subprocess
-        res = subprocess.run(["nvidia-smi"], capture_output=True, timeout=3)
-        if res.returncode == 0:
-            return -1  # GPU available
+        import llama_cpp
+        if getattr(llama_cpp, "llama_supports_gpu_offload", lambda: False)():
+            return -1  # Real CUDA / Metal GPU offloading compiled and active
     except Exception:
         pass
-
-    # Check for Apple Silicon Metal
-    if sys.platform == "darwin":
-        return -1
 
     return 0  # Default to CPU fallback
 
@@ -163,7 +157,6 @@ class LocalModel:
             n_batch=2048,       # Process prompts in 2048-token chunks (4x faster prompt evaluation)
             n_threads=n_threads, # Maximize multi-threading CPU efficiency
             n_gpu_layers=self.n_gpu_layers,
-            chat_format="chatml-function-calling", # Native GGUF tool-calling support
             use_mmap=True,      # Instant memory-mapped loading
             verbose=False,
         )
