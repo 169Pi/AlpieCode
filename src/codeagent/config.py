@@ -17,8 +17,8 @@ CONFIG_DIR = Path.home() / ".alpiecode"
 CONFIG_PATH = CONFIG_DIR / "config.json"
 
 DEFAULTS = {
-    "base_url": None,  # If set, uses fast server (vLLM / Ollama / llama-server). If None, uses local GGUF model.
-    "model": "169Pi/Alpie_learn_prototype_GGUF_NEW",
+    "base_url": "http://20.245.200.125:8000/v1",  # Remote VLM server endpoint
+    "model": "169Pi/grpo_phase_2_merged",
     "model_repo": "169Pi/Alpie_learn_prototype_GGUF_NEW",
     "api_key": "not-needed",
     "hf_token": None,
@@ -29,6 +29,24 @@ DEFAULTS = {
     "n_ctx": 16384,  # 16k context window for fast local loading
     "n_gpu_layers": None,  # None = auto-detect GPU
 }
+
+
+def is_server_reachable(base_url: Optional[str], timeout: float = 0.4) -> bool:
+    """Fast network ping check (0.4s max) to see if server endpoint is online."""
+    if not base_url:
+        return False
+    try:
+        import socket
+        from urllib.parse import urlparse
+        parsed = urlparse(base_url)
+        host = parsed.hostname
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        if not host:
+            return False
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except Exception:
+        return False
 
 
 @dataclass

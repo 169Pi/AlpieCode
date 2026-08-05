@@ -420,7 +420,10 @@ def run_agent(task: str, workdir: Path, cfg: Config, verbose: bool = True,
     workdir = workdir.resolve()
     _ensure_git(workdir)
 
-    if cfg.base_url:
+    from .config import is_server_reachable
+    server_online = is_server_reachable(cfg.base_url)
+
+    if server_online:
         client = OpenAI(
             base_url=cfg.base_url,
             api_key=cfg.api_key or "not-needed",
@@ -473,10 +476,11 @@ def run_agent(task: str, workdir: Path, cfg: Config, verbose: bool = True,
             if url:
                 console.print(f"📺 URL: {url}", style="cyan")
             console.print(f"📂 Workdir: {workdir}", style="dim")
-            if cfg.base_url:
-                console.print(f"🌐 Server Endpoint: {cfg.base_url}", style="dim")
+            if server_online:
+                console.print(f"🌐 Mode: [bold green]ONLINE[/bold green] (Server: {cfg.base_url})", style="dim")
                 console.print(f"🤖 Model: {cfg.model}", style="dim")
             else:
+                console.print(f"🧠 Mode: [bold yellow]OFFLINE[/bold yellow] (Local GGUF GPU Engine)", style="dim")
                 console.print(f"🧠 Local Model: {cfg.model_repo}", style="dim")
                 console.print(f"⚡ Context Window: {cfg.n_ctx} tokens", style="dim")
             console.print(f"🧠 Reasoning: {'ON' if cfg.enable_thinking else 'OFF'}", style="dim")
@@ -647,7 +651,10 @@ def run_chat(workdir: Path, cfg: Config, verbose: bool = True) -> None:
     workdir = workdir.resolve()
     _ensure_git(workdir)
 
-    if cfg.base_url:
+    from .config import is_server_reachable
+    server_online = is_server_reachable(cfg.base_url)
+
+    if server_online:
         client = OpenAI(
             base_url=cfg.base_url,
             api_key=cfg.api_key or "not-needed",
@@ -665,7 +672,7 @@ def run_chat(workdir: Path, cfg: Config, verbose: bool = True) -> None:
         client = None
     dispatch = make_dispatch(workdir)
 
-    is_offline = (cfg.base_url is None)
+    is_offline = not server_online
     messages = [
         {"role": "system", "content": _build_system_prompt(workdir, is_offline=is_offline)},
     ]
@@ -675,7 +682,7 @@ def run_chat(workdir: Path, cfg: Config, verbose: bool = True) -> None:
         console.print(Panel(
             "[bold cyan]AlpieCode[/bold cyan] interactive mode\n"
             f"📂 Working in: [cyan]{workdir}[/cyan]\n"
-            + (f"🌐 Endpoint: [cyan]{cfg.base_url}[/cyan]\n" if cfg.base_url else f"🧠 Local Model: [cyan]{cfg.model_repo}[/cyan]\n")
+            + (f"🌐 Mode: [bold green]ONLINE[/bold green] (Server: {cfg.base_url})\n" if server_online else f"🧠 Mode: [bold yellow]OFFLINE[/bold yellow] (Local GGUF GPU Engine)\n")
             + f"🔧 Tools: [cyan]{len(TOOLS)} available[/cyan]\n\n"
             "Type your request, or [bold red]exit[/bold red] / [bold red]quit[/bold red] to stop.",
             title="💬 Chat Mode",
