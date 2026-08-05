@@ -219,7 +219,7 @@ class TestCalculatorEvaluate:
         """Test that invalid numbers raise error."""
         with pytest.raises(CalculatorError) as exc_info:
             self.calc.evaluate("2 + abc")
-        assert "invalid number" in str(exc_info.value).lower()
+        assert "invalid character" in str(exc_info.value).lower()
     
     def test_evaluate_history_is_updated(self):
         """Test that evaluation updates the history."""
