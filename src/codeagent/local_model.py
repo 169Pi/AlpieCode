@@ -15,6 +15,16 @@ CACHE_DIR = Path.home() / ".alpiecode" / "models"
 DEFAULT_REPO = "169Pi/Alpie_learn_prototype_GGUF_NEW"
 DEFAULT_CTX_SIZE = 32768  # 32k tokens default for fast loading (supports up to 256k)
 
+# Preload WSL NVIDIA CUDA driver if running under WSL
+if sys.platform.startswith("linux"):
+    try:
+        import ctypes
+        wsl_cuda = Path("/usr/lib/wsl/lib/libcuda.so.1")
+        if wsl_cuda.exists():
+            ctypes.CDLL(str(wsl_cuda), mode=ctypes.RTLD_GLOBAL)
+    except Exception:
+        pass
+
 
 # ── GPU Auto-Detection ────────────────────────────────────────────────
 
