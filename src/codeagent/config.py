@@ -23,7 +23,7 @@ DEFAULTS = {
     "temperature": 0.2,
     "max_tokens": 16384,
     "enable_thinking": True,
-    "n_ctx": 262144,
+    "n_ctx": 32768,  # 32k context window (loads in ~2s; configurable up to 256k)
     "n_gpu_layers": None,  # None = auto-detect GPU
 }
 
@@ -36,7 +36,7 @@ class Config:
     temperature: float = 0.2
     max_tokens: int = 16384
     enable_thinking: bool = True
-    n_ctx: int = 262144
+    n_ctx: int = 32768
     n_gpu_layers: Optional[int] = None
 
     # Legacy fields compatibility

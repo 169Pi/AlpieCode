@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional
 
 CACHE_DIR = Path.home() / ".alpiecode" / "models"
 DEFAULT_REPO = "169Pi/Alpie_learn_prototype_GGUF_NEW"
-DEFAULT_CTX_SIZE = 262144  # 256k tokens
+DEFAULT_CTX_SIZE = 32768  # 32k tokens default for fast loading (supports up to 256k)
 
 
 # ── GPU Auto-Detection ────────────────────────────────────────────────
