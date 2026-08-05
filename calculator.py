@@ -177,7 +177,7 @@ Examples:
     )
     
     parser.add_argument(
-        "-h", "--history",
+        "-H", "--history",
         action="store_true",
         help="Show calculation history"
     )
