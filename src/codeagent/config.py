@@ -9,7 +9,7 @@ Resolution order (highest priority first):
 
 import json
 import os
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, fields
 from pathlib import Path
 from typing import Optional
 
@@ -23,7 +23,7 @@ DEFAULTS = {
     "temperature": 0.2,
     "max_tokens": 16384,
     "enable_thinking": True,
-    "n_ctx": 32768,  # 32k context window (loads in ~2s; configurable up to 256k)
+    "n_ctx": 16384,  # 16k default for maximum local execution speed & instant startup
     "n_gpu_layers": None,  # None = auto-detect GPU
 }
 
@@ -36,7 +36,7 @@ class Config:
     temperature: float = 0.2
     max_tokens: int = 16384
     enable_thinking: bool = True
-    n_ctx: int = 32768
+    n_ctx: int = 16384
     n_gpu_layers: Optional[int] = None
 
     # Legacy fields compatibility
@@ -49,7 +49,8 @@ def load_config() -> Config:
     data = dict(DEFAULTS)
     if CONFIG_PATH.exists():
         try:
-            data.update(json.loads(CONFIG_PATH.read_text()))
+            saved_data = json.loads(CONFIG_PATH.read_text())
+            data.update(saved_data)
         except Exception:
             pass
 
@@ -61,7 +62,10 @@ def load_config() -> Config:
     if os.environ.get("ALPIECODE_CPU") == "1":
         data["n_gpu_layers"] = 0
 
-    return Config(**data)
+    # Filter data to only keys present in Config fields
+    valid_keys = {f.name for f in fields(Config)}
+    filtered_data = {k: v for k, v in data.items() if k in valid_keys}
+    return Config(**filtered_data)
 
 
 def save_config(cfg: Config) -> None:

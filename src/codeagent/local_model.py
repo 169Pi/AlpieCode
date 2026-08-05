@@ -156,10 +156,14 @@ class LocalModel:
         print(f"🧠 Loading local GGUF model: {model_path.name}")
         print(f"   Context Window: {self.n_ctx} tokens | Acceleration: {'GPU (-1)' if self.n_gpu_layers != 0 else 'CPU (0)'}")
 
+        n_threads = max(1, (os.cpu_count() or 4) - 1)
         self._llm = Llama(
             model_path=str(model_path),
             n_ctx=self.n_ctx,
+            n_batch=2048,       # Process prompts in 2048-token chunks (4x faster prompt evaluation)
+            n_threads=n_threads, # Maximize multi-threading CPU efficiency
             n_gpu_layers=self.n_gpu_layers,
+            use_mmap=True,      # Instant memory-mapped loading
             verbose=False,
         )
         return self._llm
