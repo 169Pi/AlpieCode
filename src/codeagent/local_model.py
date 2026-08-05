@@ -163,6 +163,7 @@ class LocalModel:
             n_batch=2048,       # Process prompts in 2048-token chunks (4x faster prompt evaluation)
             n_threads=n_threads, # Maximize multi-threading CPU efficiency
             n_gpu_layers=self.n_gpu_layers,
+            chat_format="chatml-function-calling", # Native GGUF tool-calling support
             use_mmap=True,      # Instant memory-mapped loading
             verbose=False,
         )

@@ -347,43 +347,57 @@ def _build_system_prompt(workdir: Path) -> str:
 
 def _parse_text_tool_calls(text: str) -> list:
     """
-    Parse tool calls printed as text tags in model output.
-    Supports XML-style: <tool_call><function=name><parameter=k>v</parameter></function></tool_call>
-    and JSON-style: <tool_call>{"name": "...", "arguments": {...}}</tool_call>
+    Ultra-robust parser for tool calls printed in model text.
+    Handles XML tag format, JSON format, and loose/unclosed syntax.
     """
-    if not text or "<tool_call>" not in text:
+    if not text:
         return []
 
     tool_calls = []
-    blocks = re.findall(r"<tool_call>(.*?)(?:</tool_call>|$)", text, re.DOTALL)
 
-    for block in blocks:
-        block_clean = block.strip()
+    # 1. Try parsing JSON blocks inside <tool_call> or ```json
+    json_matches = re.findall(r"(?:<tool_call>|```json)\s*(\{.*?\})\s*(?:</tool_call>|```|$)", text, re.DOTALL)
+    for jm in json_matches:
         try:
-            data = json.loads(block_clean)
+            data = json.loads(jm.strip())
             if isinstance(data, dict) and "name" in data:
                 tool_calls.append({
                     "name": data["name"],
                     "arguments": data.get("arguments", {})
                 })
-                continue
         except Exception:
             pass
 
-        fn_match = re.search(r"<function=([\w_]+)>(.*?)(?:</function>|$)", block_clean, re.DOTALL)
-        if fn_match:
-            func_name = fn_match.group(1)
-            params_body = fn_match.group(2)
-            args = {}
-            param_matches = re.findall(r"<parameter=([\w_]+)>\s*(.*?)(?=<parameter=|</parameter>|</function>|$)", params_body, re.DOTALL)
-            for key, val in param_matches:
-                val_clean = val.rstrip("</parameter>").strip()
-                args[key] = val_clean
+    if tool_calls:
+        return tool_calls
 
-            tool_calls.append({
-                "name": func_name,
-                "arguments": args
-            })
+    # 2. Parse XML/tag format: <function=NAME> or function=NAME
+    fn_matches = list(re.finditer(r"<function=([a-zA-Z0-9_]+)>", text))
+
+    for idx, match in enumerate(fn_matches):
+        func_name = match.group(1)
+        start_pos = match.end()
+        end_pos = fn_matches[idx + 1].start() if idx + 1 < len(fn_matches) else len(text)
+        chunk = text[start_pos:end_pos]
+
+        # Extract all parameters in chunk: <parameter=key_name> value
+        args = {}
+        param_matches = list(re.finditer(r"<parameter=([a-zA-Z0-9_]+)>", chunk))
+
+        for p_idx, p_match in enumerate(param_matches):
+            key = p_match.group(1)
+            p_start = p_match.end()
+            p_end = param_matches[p_idx + 1].start() if p_idx + 1 < len(param_matches) else len(chunk)
+            val_raw = chunk[p_start:p_end]
+
+            # Strip ending tags if present
+            val_clean = re.sub(r"(</parameter>|</function>|</tool_call>).*$", "", val_raw, flags=re.DOTALL).strip()
+            args[key] = val_clean
+
+        tool_calls.append({
+            "name": func_name,
+            "arguments": args
+        })
 
     return tool_calls
 
