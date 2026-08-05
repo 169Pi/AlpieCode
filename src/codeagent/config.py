@@ -2,53 +2,65 @@
 Per-user config for AlpieCode.
 
 Resolution order (highest priority first):
-  1. Environment variables: ALPIECODE_BASE_URL / CODEAGENT_BASE_URL, etc.
+  1. Environment variables: HF_TOKEN, ALPIECODE_MODEL_REPO, etc.
   2. ~/.alpiecode/config.json (written by `alpiecode init`)
-  3. Built-in defaults (your VLM endpoint)
+  3. Built-in defaults (Local GGUF model: 169Pi/Alpie_learn_prototype_GGUF_NEW)
 """
 
 import json
 import os
 from dataclasses import dataclass, asdict
 from pathlib import Path
+from typing import Optional
 
 CONFIG_DIR = Path.home() / ".alpiecode"
 CONFIG_PATH = CONFIG_DIR / "config.json"
 
 DEFAULTS = {
-    "base_url": "http://20.245.200.125:8000/v1",
-    "model": "169Pi/grpo_phase_2_merged",
-    "api_key": "not-needed",
+    "model_repo": "169Pi/Alpie_learn_prototype_GGUF_NEW",
+    "hf_token": None,
     "max_turns": 30,
     "temperature": 0.2,
     "max_tokens": 16384,
     "enable_thinking": True,
+    "n_ctx": 262144,
+    "n_gpu_layers": None,  # None = auto-detect GPU
 }
 
 
 @dataclass
 class Config:
-    base_url: str
-    model: str
-    api_key: str
+    model_repo: str = "169Pi/Alpie_learn_prototype_GGUF_NEW"
+    hf_token: Optional[str] = None
     max_turns: int = 30
     temperature: float = 0.2
     max_tokens: int = 16384
     enable_thinking: bool = True
+    n_ctx: int = 262144
+    n_gpu_layers: Optional[int] = None
+
+    # Legacy fields compatibility
+    base_url: Optional[str] = None
+    model: Optional[str] = None
+    api_key: Optional[str] = None
 
 
 def load_config() -> Config:
     data = dict(DEFAULTS)
     if CONFIG_PATH.exists():
-        data.update(json.loads(CONFIG_PATH.read_text()))
-    # env vars win over the saved file (support ALPIECODE_* and CODEAGENT_*)
-    for env_prefix in ("ALPIECODE_", "CODEAGENT_"):
-        if os.environ.get(f"{env_prefix}BASE_URL"):
-            data["base_url"] = os.environ[f"{env_prefix}BASE_URL"]
-        if os.environ.get(f"{env_prefix}MODEL"):
-            data["model"] = os.environ[f"{env_prefix}MODEL"]
-        if os.environ.get(f"{env_prefix}API_KEY"):
-            data["api_key"] = os.environ[f"{env_prefix}API_KEY"]
+        try:
+            data.update(json.loads(CONFIG_PATH.read_text()))
+        except Exception:
+            pass
+
+    # env vars override saved file
+    if os.environ.get("HF_TOKEN"):
+        data["hf_token"] = os.environ["HF_TOKEN"]
+    if os.environ.get("ALPIECODE_MODEL_REPO"):
+        data["model_repo"] = os.environ["ALPIECODE_MODEL_REPO"]
+    if os.environ.get("ALPIECODE_CPU") == "1":
+        data["n_gpu_layers"] = 0
+
     return Config(**data)
 
 
@@ -59,14 +71,38 @@ def save_config(cfg: Config) -> None:
 
 def interactive_init() -> Config:
     current = load_config()
-    print("AlpieCode setup — press enter to keep the current/default value.\n")
+    print("AlpieCode Setup — Local GGUF Model Configuration\n")
 
-    base_url = input(f"vLLM/OpenAI-compatible base_url [{current.base_url}]: ").strip() or current.base_url
-    model = input(f"served model name [{current.model}]: ").strip() or current.model
-    api_key = input(f"api key (blank if none) [{current.api_key}]: ").strip() or current.api_key
+    print("AlpieCode uses the 169Pi/Alpie_learn_prototype_GGUF_NEW model from HuggingFace.")
+    print("Please enter your HuggingFace user access token (required to download model).\n")
 
-    cfg = Config(base_url=base_url, model=model, api_key=api_key, max_turns=current.max_turns,
-                 temperature=current.temperature, max_tokens=current.max_tokens)
+    token_prompt = f"HuggingFace Token [{current.hf_token or 'none'}]: "
+    hf_token = input(token_prompt).strip() or current.hf_token
+
+    repo_prompt = f"Model Repo [{current.model_repo}]: "
+    model_repo = input(repo_prompt).strip() or current.model_repo
+
+    cfg = Config(
+        model_repo=model_repo,
+        hf_token=hf_token,
+        max_turns=current.max_turns,
+        temperature=current.temperature,
+        max_tokens=current.max_tokens,
+        enable_thinking=current.enable_thinking,
+        n_ctx=current.n_ctx,
+        n_gpu_layers=current.n_gpu_layers,
+    )
     save_config(cfg)
-    print(f"\nSaved to {CONFIG_PATH}")
+    print(f"\n✅ Config saved to {CONFIG_PATH}")
+
+    # Trigger model download test if token provided
+    try:
+        from .local_model import download_model
+        print("\n📥 Testing HuggingFace model download...")
+        local_path = download_model(repo_id=cfg.model_repo, token=cfg.hf_token)
+        print(f"✅ Model downloaded & cached at: {local_path}")
+    except Exception as e:
+        print(f"⚠️ Could not download model right now: {e}")
+        print("   Model will be downloaded automatically on first task execution.")
+
     return cfg
