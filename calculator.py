@@ -132,7 +132,10 @@ class Calculator:
         
         # Use eval with restricted namespace for safety
         # This is safe because we've already validated the expression
-        result = eval(expression, {"__builtins__": {}}, {})
+        try:
+            result = eval(expression, {"__builtins__": {}}, {})
+        except ZeroDivisionError:
+            raise CalculatorError("Division by zero is not allowed")
         
         # Store in history
         self.history.append(f"{expression} = {result}")
