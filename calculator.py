@@ -1,237 +1,117 @@
-#!/usr/bin/env python3
 """
-A simple Python CLI calculator with arithmetic operations.
+Python CLI Calculator Module
 
-Usage:
-    python calculator.py <expression>
-    
-Examples:
-    python calculator.py "2 + 3"
-    python calculator.py "10 * 5 - 3"
-    python calculator.py "100 / 4"
+Provides arithmetic operations and a command-line interface for calculations.
 """
 
-import argparse
-import sys
+import re
 from typing import Union
 
 
-class CalculatorError(Exception):
-    """Custom exception for calculator errors."""
-    pass
+def add(a: Union[int, float], b: Union[int, float]) -> Union[int, float]:
+    """Add two numbers."""
+    return a + b
 
 
-class Calculator:
-    """A simple calculator supporting basic arithmetic operations."""
-    
-    def __init__(self):
-        """Initialize the calculator."""
-        self.history: list[str] = []
-    
-    def _parse_number(self, value: str) -> float:
-        """
-        Parse a string value into a float.
-        
-        Args:
-            value: String representation of a number.
-            
-        Returns:
-            The parsed float value.
-            
-        Raises:
-            CalculatorError: If the value cannot be parsed as a number.
-        """
-        try:
-            return float(value)
-        except ValueError:
-            raise CalculatorError(f"Invalid number: '{value}'")
-    
-    def add(self, a: Union[int, float], b: Union[int, float]) -> float:
-        """
-        Add two numbers.
-        
-        Args:
-            a: First operand.
-            b: Second operand.
-            
-        Returns:
-            The sum of a and b.
-        """
-        return a + b
-    
-    def subtract(self, a: Union[int, float], b: Union[int, float]) -> float:
-        """
-        Subtract b from a.
-        
-        Args:
-            a: First operand (minuend).
-            b: Second operand (subtrahend).
-            
-        Returns:
-            The difference of a and b.
-        """
-        return a - b
-    
-    def multiply(self, a: Union[int, float], b: Union[int, float]) -> float:
-        """
-        Multiply two numbers.
-        
-        Args:
-            a: First operand.
-            b: Second operand.
-            
-        Returns:
-            The product of a and b.
-        """
-        return a * b
-    
-    def divide(self, a: Union[int, float], b: Union[int, float]) -> float:
-        """
-        Divide a by b.
-        
-        Args:
-            a: Dividend.
-            b: Divisor.
-            
-        Returns:
-            The quotient of a divided by b.
-            
-        Raises:
-            CalculatorError: If b is zero (division by zero).
-        """
-        if b == 0:
-            raise CalculatorError("Division by zero is not allowed")
-        return a / b
-    
-    def evaluate(self, expression: str) -> float:
-        """
-        Evaluate a mathematical expression.
-        
-        Supports: +, -, *, / operators with standard precedence.
-        Supports parentheses for grouping.
-        
-        Args:
-            expression: A mathematical expression string.
-            
-        Returns:
-            The result of evaluating the expression.
-            
-        Raises:
-            CalculatorError: If the expression is invalid or contains
-                           unsupported characters.
-        """
-        # Validate expression contains only allowed characters
-        allowed_chars = set("0123456789+-*/(). ")
-        for char in expression:
-            if char not in allowed_chars:
-                raise CalculatorError(f"Invalid character in expression: '{char}'")
-        
-        # Handle empty expression
-        if not expression.strip():
-            raise CalculatorError("Empty expression")
-        
-        # Use eval with restricted namespace for safety
-        # This is safe because we've already validated the expression
-        try:
-            result = eval(expression, {"__builtins__": {}}, {})
-        except ZeroDivisionError:
-            raise CalculatorError("Division by zero is not allowed")
-        
-        # Store in history
-        self.history.append(f"{expression} = {result}")
-        
-        return result
-    
-    def get_history(self) -> list[str]:
-        """
-        Get the calculation history.
-        
-        Returns:
-            List of calculation strings in format "expression = result".
-        """
-        return self.history.copy()
+def subtract(a: Union[int, float], b: Union[int, float]) -> Union[int, float]:
+    """Subtract b from a."""
+    return a - b
 
 
-def parse_arguments() -> argparse.Namespace:
+def multiply(a: Union[int, float], b: Union[int, float]) -> Union[int, float]:
+    """Multiply two numbers."""
+    return a * b
+
+
+def divide(a: Union[int, float], b: Union[int, float]) -> Union[int, float]:
+    """Divide a by b. Raises ValueError if b is zero."""
+    if b == 0:
+        raise ValueError("Division by zero is not allowed.")
+    return a / b
+
+
+def calculate(expression: str) -> Union[int, float]:
     """
-    Parse command-line arguments.
+    Calculate the result of a mathematical expression.
     
+    Supports basic arithmetic operations: +, -, *, /
+    Example: calculate("2 + 3 * 4") returns 14
+    
+    Args:
+        expression: A string containing a mathematical expression
+        
     Returns:
-        Parsed arguments namespace.
+        The result of the calculation
+        
+    Raises:
+        ValueError: If the expression is invalid or division by zero occurs
+        TypeError: If the expression contains non-numeric values
     """
-    parser = argparse.ArgumentParser(
-        description="A simple Python CLI calculator",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  %(prog)s "2 + 3"
-  %(prog)s "10 * 5 - 3"
-  %(prog)s "100 / 4"
-  %(prog)s "((2 + 3) * 4) - 1"
-        """
-    )
+    # Validate the expression contains only valid characters
+    pattern = r'^[0-9+\-*/\s().]+$'
+    if not re.match(pattern, expression):
+        raise ValueError(f"Invalid expression: '{expression}'")
     
-    parser.add_argument(
-        "expression",
-        type=str,
-        nargs="?",
-        default="",
-        help="Mathematical expression to evaluate"
-    )
+    # Check for empty expression
+    if not expression.strip():
+        raise ValueError("Empty expression")
     
-    parser.add_argument(
-        "-H", "--history",
-        action="store_true",
-        help="Show calculation history"
-    )
-    
-    return parser.parse_args()
-
-
-def main() -> int:
-    """
-    Main entry point for the CLI calculator.
-    
-    Returns:
-        Exit code (0 for success, 1 for error).
-    """
-    args = parse_arguments()
-    
-    calculator = Calculator()
-    
-    if args.history:
-        print("Calculation History:")
-        print("-" * 40)
-        if calculator.history:
-            for entry in calculator.history:
-                print(entry)
-        else:
-            print("No calculations performed yet.")
-        return 0
-    
-    if not args.expression:
-        print("Error: No expression provided")
-        print("Usage: python calculator.py <expression>")
-        return 1
-    
+    # Evaluate the expression safely
     try:
-        result = calculator.evaluate(args.expression)
-        
-        # Format output - avoid floating point representation issues
-        if result == int(result):
-            print(f"Result: {int(result)}")
-        else:
-            print(f"Result: {result}")
-        
-        return 0
-        
-    except CalculatorError as e:
-        print(f"Error: {e}")
-        return 1
+        result = eval(expression, {"__builtins__": {}}, {})
+        return result
+    except ZeroDivisionError:
+        raise ValueError("Division by zero is not allowed.")
     except Exception as e:
-        print(f"Unexpected error: {e}")
-        return 1
+        raise ValueError(f"Invalid expression: {e}")
+
+
+def main():
+    """Main entry point for the CLI calculator."""
+    print("Python CLI Calculator")
+    print("Type 'quit' or 'exit' to exit")
+    print("Type 'help' for available commands")
+    print()
+    
+    while True:
+        try:
+            user_input = input(">>> ").strip()
+            
+            if not user_input:
+                continue
+            
+            if user_input.lower() in ('quit', 'exit'):
+                print("Goodbye!")
+                break
+            
+            if user_input.lower() == 'help':
+                print("Available commands:")
+                print("  +, -, *, /  - Arithmetic operations")
+                print("  Example: 2 + 3 * 4")
+                print("  Type 'quit' to exit, 'help' for this message")
+                continue
+            
+            try:
+                result = calculate(user_input)
+                # Format the output - remove unnecessary decimal places
+                if isinstance(result, float):
+                    if result == int(result):
+                        print(f"Result: {int(result)}")
+                    else:
+                        # Remove trailing zeros
+                        formatted = f"{result:.10f}".rstrip('0').rstrip('.')
+                        print(f"Result: {formatted}")
+                else:
+                    print(f"Result: {result}")
+            except ValueError as e:
+                print(f"Error: {e}")
+        except KeyboardInterrupt:
+            print("\nGoodbye!")
+            break
+        except EOFError:
+            print("\nGoodbye!")
+            break
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()
