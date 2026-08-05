@@ -352,13 +352,22 @@ def run_agent(task: str, workdir: Path, cfg: Config, verbose: bool = True,
     workdir = workdir.resolve()
     _ensure_git(workdir)
 
-    from .local_model import LocalModel
-    local_model = LocalModel(
-        repo_id=cfg.model_repo,
-        n_ctx=cfg.n_ctx,
-        n_gpu_layers=cfg.n_gpu_layers,
-        token=cfg.hf_token,
-    )
+    if cfg.base_url:
+        client = OpenAI(
+            base_url=cfg.base_url,
+            api_key=cfg.api_key or "not-needed",
+            timeout=httpx.Timeout(60.0, connect=5.0),
+        )
+        local_model = None
+    else:
+        from .local_model import LocalModel
+        local_model = LocalModel(
+            repo_id=cfg.model_repo,
+            n_ctx=cfg.n_ctx,
+            n_gpu_layers=cfg.n_gpu_layers,
+            token=cfg.hf_token,
+        )
+        client = None
     dispatch = make_dispatch(workdir)
 
     # If --github repo provided, append repo context to task
@@ -395,8 +404,12 @@ def run_agent(task: str, workdir: Path, cfg: Config, verbose: bool = True,
             if url:
                 console.print(f"📺 URL: {url}", style="cyan")
             console.print(f"📂 Workdir: {workdir}", style="dim")
-            console.print(f"🧠 Local Model: {cfg.model_repo}", style="dim")
-            console.print(f"⚡ Context Window: {cfg.n_ctx} tokens", style="dim")
+            if cfg.base_url:
+                console.print(f"🌐 Server Endpoint: {cfg.base_url}", style="dim")
+                console.print(f"🤖 Model: {cfg.model}", style="dim")
+            else:
+                console.print(f"🧠 Local Model: {cfg.model_repo}", style="dim")
+                console.print(f"⚡ Context Window: {cfg.n_ctx} tokens", style="dim")
             console.print(f"🧠 Reasoning: {'ON' if cfg.enable_thinking else 'OFF'}", style="dim")
             console.print(f"🔧 Tools: {len(TOOLS)} available", style="dim")
         else:
@@ -420,24 +433,34 @@ def run_agent(task: str, workdir: Path, cfg: Config, verbose: bool = True,
                 console.rule(f"Turn {turn + 1}")
 
         try:
-            resp = local_model.create_chat_completion(
-                messages=messages,
-                tools=TOOLS,
-                tool_choice="auto",
-                temperature=cfg.temperature,
-                max_tokens=cfg.max_tokens,
-                enable_thinking=cfg.enable_thinking,
-            )
+            if client:
+                resp = client.chat.completions.create(
+                    model=cfg.model,
+                    messages=messages,
+                    tools=TOOLS,
+                    tool_choice="auto",
+                    temperature=cfg.temperature,
+                    max_tokens=cfg.max_tokens,
+                    extra_body={"chat_template_kwargs": {"enable_thinking": cfg.enable_thinking}},
+                )
+            else:
+                resp = local_model.create_chat_completion(
+                    messages=messages,
+                    tools=TOOLS,
+                    tool_choice="auto",
+                    temperature=cfg.temperature,
+                    max_tokens=cfg.max_tokens,
+                    enable_thinking=cfg.enable_thinking,
+                )
         except Exception as e:
             if verbose:
                 if HAS_RICH:
                     console.print(
-                        f"\n❌ [bold red]Local Model Error ({cfg.model_repo})[/bold red]\n"
+                        f"\n❌ [bold red]Model Error[/bold red]\n"
                         f"   Error: {e}\n"
-                        f"   💡 [yellow]Run `alpiecode init` to enter your HuggingFace token and download the model.[/yellow]\n"
                     )
                 else:
-                    print(f"\n❌ Local Model Error ({cfg.model_repo}): {e}")
+                    print(f"\n❌ Model Error: {e}")
             return messages
 
         msg = resp.choices[0].message
@@ -536,13 +559,22 @@ def run_chat(workdir: Path, cfg: Config, verbose: bool = True) -> None:
     workdir = workdir.resolve()
     _ensure_git(workdir)
 
-    from .local_model import LocalModel
-    local_model = LocalModel(
-        repo_id=cfg.model_repo,
-        n_ctx=cfg.n_ctx,
-        n_gpu_layers=cfg.n_gpu_layers,
-        token=cfg.hf_token,
-    )
+    if cfg.base_url:
+        client = OpenAI(
+            base_url=cfg.base_url,
+            api_key=cfg.api_key or "not-needed",
+            timeout=httpx.Timeout(300.0, connect=10.0),
+        )
+        local_model = None
+    else:
+        from .local_model import LocalModel
+        local_model = LocalModel(
+            repo_id=cfg.model_repo,
+            n_ctx=cfg.n_ctx,
+            n_gpu_layers=cfg.n_gpu_layers,
+            token=cfg.hf_token,
+        )
+        client = None
     dispatch = make_dispatch(workdir)
 
     messages = [
@@ -554,9 +586,8 @@ def run_chat(workdir: Path, cfg: Config, verbose: bool = True) -> None:
         console.print(Panel(
             "[bold cyan]AlpieCode[/bold cyan] interactive mode\n"
             f"📂 Working in: [cyan]{workdir}[/cyan]\n"
-            f"🧠 Local Model: [cyan]{cfg.model_repo}[/cyan]\n"
-            f"⚡ Context Window: [cyan]{cfg.n_ctx} tokens[/cyan]\n"
-            f"🔧 Tools: [cyan]{len(TOOLS)} available[/cyan]\n\n"
+            + (f"🌐 Endpoint: [cyan]{cfg.base_url}[/cyan]\n" if cfg.base_url else f"🧠 Local Model: [cyan]{cfg.model_repo}[/cyan]\n")
+            + f"🔧 Tools: [cyan]{len(TOOLS)} available[/cyan]\n\n"
             "Type your request, or [bold red]exit[/bold red] / [bold red]quit[/bold red] to stop.",
             title="💬 Chat Mode",
             border_style="blue",
@@ -600,14 +631,25 @@ def run_chat(workdir: Path, cfg: Config, verbose: bool = True) -> None:
                     console.rule(f"Turn {turn_count}")
 
             try:
-                resp = local_model.create_chat_completion(
-                    messages=messages,
-                    tools=TOOLS,
-                    tool_choice="auto",
-                    temperature=cfg.temperature,
-                    max_tokens=cfg.max_tokens,
-                    enable_thinking=cfg.enable_thinking,
-                )
+                if client:
+                    resp = client.chat.completions.create(
+                        model=cfg.model,
+                        messages=messages,
+                        tools=TOOLS,
+                        tool_choice="auto",
+                        temperature=cfg.temperature,
+                        max_tokens=cfg.max_tokens,
+                        extra_body={"chat_template_kwargs": {"enable_thinking": cfg.enable_thinking}},
+                    )
+                else:
+                    resp = local_model.create_chat_completion(
+                        messages=messages,
+                        tools=TOOLS,
+                        tool_choice="auto",
+                        temperature=cfg.temperature,
+                        max_tokens=cfg.max_tokens,
+                        enable_thinking=cfg.enable_thinking,
+                    )
             except Exception as e:
                 console.print(f"❌ Local model error: {e}", style="bold red" if HAS_RICH else None)
                 break

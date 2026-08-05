@@ -17,20 +17,26 @@ CONFIG_DIR = Path.home() / ".alpiecode"
 CONFIG_PATH = CONFIG_DIR / "config.json"
 
 DEFAULTS = {
+    "base_url": None,  # If set, uses fast server (vLLM / Ollama / llama-server). If None, uses local GGUF model.
+    "model": "169Pi/Alpie_learn_prototype_GGUF_NEW",
     "model_repo": "169Pi/Alpie_learn_prototype_GGUF_NEW",
+    "api_key": "not-needed",
     "hf_token": None,
     "max_turns": 30,
     "temperature": 0.2,
     "max_tokens": 16384,
     "enable_thinking": True,
-    "n_ctx": 16384,  # 16k default for maximum local execution speed & instant startup
+    "n_ctx": 16384,  # 16k context window for fast local loading
     "n_gpu_layers": None,  # None = auto-detect GPU
 }
 
 
 @dataclass
 class Config:
+    base_url: Optional[str] = None
+    model: str = "169Pi/Alpie_learn_prototype_GGUF_NEW"
     model_repo: str = "169Pi/Alpie_learn_prototype_GGUF_NEW"
+    api_key: str = "not-needed"
     hf_token: Optional[str] = None
     max_turns: int = 30
     temperature: float = 0.2
@@ -38,11 +44,6 @@ class Config:
     enable_thinking: bool = True
     n_ctx: int = 16384
     n_gpu_layers: Optional[int] = None
-
-    # Legacy fields compatibility
-    base_url: Optional[str] = None
-    model: Optional[str] = None
-    api_key: Optional[str] = None
 
 
 def load_config() -> Config:
