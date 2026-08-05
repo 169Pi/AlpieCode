@@ -322,7 +322,7 @@ class TestParseArguments:
     
     def test_parse_history_flag(self):
         """Test parsing the history flag."""
-        with patch("sys.argv", ["calculator.py", "--history"]):
+        with patch("sys.argv", ["calculator.py", "-H"]):
             args = parse_arguments()
             assert args.history is True
     
