@@ -328,7 +328,7 @@ class TestParseArguments:
     
     def test_parse_both_expression_and_history(self):
         """Test parsing both expression and history flag."""
-        with patch("sys.argv", ["calculator.py", "2 + 3", "--history"]):
+        with patch("sys.argv", ["calculator.py", "2 + 3", "-H"]):
             args = parse_arguments()
             assert args.expression == "2 + 3"
             assert args.history is True
