@@ -85,12 +85,22 @@ def download_model(repo_id: str = DEFAULT_REPO, token: Optional[str] = None) -> 
     if not cached_file.exists():
         print(f"📥 Downloading local model from HuggingFace ({repo_id}/{target_file})...")
         print("   This is a one-time download. Subsequent runs will work 100% offline.")
-        hf_hub_download(
-            repo_id=repo_id,
-            filename=target_file,
-            local_dir=CACHE_DIR,
-            token=hf_token,
-        )
+        try:
+            hf_hub_download(
+                repo_id=repo_id,
+                filename=target_file,
+                local_dir=CACHE_DIR,
+                token=hf_token,
+            )
+        except Exception as e:
+            err_str = str(e)
+            if "403" in err_str or "storage limit" in err_str.lower() or "forbidden" in err_str.lower():
+                raise RuntimeError(
+                    f"HuggingFace 403 Forbidden Error for repo '{repo_id}':\n"
+                    "   'Private repository storage limit reached for 169Pi account.'\n"
+                    "   💡 Please ask your 169Pi organization admin to upgrade the HF storage plan or free up space on HuggingFace."
+                ) from e
+            raise RuntimeError(f"HuggingFace Download Failed for '{repo_id}/{target_file}': {e}") from e
 
     # Download mmproj file if available (for vision features)
     if mmproj_files:
