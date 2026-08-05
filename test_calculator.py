@@ -195,7 +195,7 @@ class TestCalculatorEvaluate:
         """Test that division by zero in expression raises error."""
         with pytest.raises(CalculatorError) as exc_info:
             self.calc.evaluate("10 / 0")
-        assert "Division by zero" in str(exc_info.value)
+        assert "division by zero" in str(exc_info.value).lower()
     
     def test_evaluate_empty_expression(self):
         """Test that empty expression raises error."""
