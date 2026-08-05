@@ -30,10 +30,8 @@ if sys.platform.startswith("linux"):
 
 def detect_gpu() -> int:
     """
-    Detect if CUDA/Metal GPU offloading is compiled & supported in llama-cpp-python.
-    Returns:
-      -1: Offload all layers to GPU if CUDA/Metal is active
-       0: CPU-only fallback
+    Detect if CUDA/Metal GPU offloading is supported in llama-cpp-python.
+    Automatically calculates optimal GPU layer offload to prevent 6GB VRAM OOM crashes.
     """
     if os.environ.get("CUDA_VISIBLE_DEVICES") == "-1":
         return 0
@@ -41,11 +39,24 @@ def detect_gpu() -> int:
     try:
         import llama_cpp
         if getattr(llama_cpp, "llama_supports_gpu_offload", lambda: False)():
-            return -1  # Real CUDA / Metal GPU offloading compiled and active
+            # Check total VRAM via nvidia-smi
+            try:
+                import subprocess
+                res = subprocess.run(
+                    ["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits"],
+                    capture_output=True, text=True, timeout=2
+                )
+                if res.returncode == 0 and res.stdout.strip():
+                    vram_mb = int(res.stdout.strip().split("\n")[0])
+                    if vram_mb <= 6500:  # 6GB VRAM GPU (e.g. RTX 3050 Laptop)
+                        return 26  # Offload 26 layers to GPU, keep 2.0GB VRAM free to prevent CUDA OOM
+            except Exception:
+                pass
+            return -1  # 8GB+ VRAM, offload all layers
     except Exception:
         pass
 
-    return 0  # Default to CPU fallback
+    return 0  # CPU fallback
 
 
 # ── Model Downloader ─────────────────────────────────────────────────
