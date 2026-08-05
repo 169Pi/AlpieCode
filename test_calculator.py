@@ -377,7 +377,7 @@ class TestMain:
         calc.evaluate("1 + 1")
         calc.evaluate("2 + 2")
         
-        with patch("sys.argv", ["calculator.py", "--history"]):
+        with patch("sys.argv", ["calculator.py", "-H"]):
             with patch("sys.stdout", new_callable=lambda: type('obj', (object,), {'write': lambda s, x: None})()):
                 result = main()
             assert result == 0
