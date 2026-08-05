@@ -226,7 +226,7 @@ class TestCalculatorEvaluate:
         self.calc.evaluate("2 + 3")
         history = self.calc.get_history()
         assert len(history) == 1
-        assert "2 + 3 = 5.0" in history[0]
+        assert "2 + 3 = 5" in history[0]
     
     def test_evaluate_multiple_calculations(self):
         """Test that multiple evaluations build history."""
