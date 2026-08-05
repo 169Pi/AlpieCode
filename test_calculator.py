@@ -335,7 +335,7 @@ class TestParseArguments:
     
     def test_parse_help_flag(self):
         """Test parsing the help flag."""
-        with patch("sys.argv", ["calculator.py", "-h"]):
+        with patch("sys.argv", ["calculator.py", "--help"]):
             with pytest.raises(SystemExit):
                 parse_arguments()
 
