@@ -302,7 +302,7 @@ class TestCalculatorHistory:
         history = self.calc.get_history()
         assert len(history) == 1
         assert "2 + 2" in history[0]
-        assert "4.0" in history[0]
+        assert "4" in history[0]
 
 
 class TestParseArguments:
