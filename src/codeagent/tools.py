@@ -339,6 +339,23 @@ def _bash(workdir: Path, command: str) -> str:
 
     Cross-platform support for Linux, macOS, and native Windows.
     """
+    # ── Offline-aware command interception ────────────────────────────
+    if getattr(_bash, '_offline_mode', False):
+        # Block package install commands when offline (no internet)
+        install_patterns = ['pip install', 'uv pip install', 'uv add', 'npm install', 'apt install', 'apt-get install']
+        cmd_lower = command.lower().strip()
+        for pattern in install_patterns:
+            if pattern in cmd_lower:
+                return json.dumps({
+                    "stdout": "",
+                    "stderr": f"⚠️ OFFLINE MODE: '{pattern}' blocked — no internet available. Use only standard library modules.",
+                    "exit_code": 1,
+                })
+        # Auto-replace pytest with unittest
+        if 'pytest' in command or '-m pytest' in command:
+            command = command.replace('python -m pytest', 'python -m unittest')
+            command = command.replace('pytest', 'python -m unittest')
+
     if not gate_command(command, auto_approve=True):
         return json.dumps({
             "stdout": "",

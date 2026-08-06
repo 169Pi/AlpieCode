@@ -466,6 +466,11 @@ def run_agent(task: str, workdir: Path, cfg: Config, verbose: bool = True,
         client = None
     dispatch = make_dispatch(workdir)
 
+    # Enable offline command interception (blocks pip install, auto-replaces pytest)
+    if not server_online:
+        from .tools import _bash
+        _bash._offline_mode = True
+
     # If --github repo provided, append repo context to task
     if github_repo:
         repo_clean = github_repo.replace("https://github.com/", "").strip("/")
@@ -697,6 +702,11 @@ def run_chat(workdir: Path, cfg: Config, verbose: bool = True) -> None:
         )
         client = None
     dispatch = make_dispatch(workdir)
+
+    # Enable offline command interception
+    if not server_online:
+        from .tools import _bash
+        _bash._offline_mode = True
 
     is_offline = not server_online
     messages = [
