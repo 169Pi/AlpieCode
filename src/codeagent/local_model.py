@@ -157,6 +157,47 @@ def download_model(repo_id: str = DEFAULT_REPO, token: Optional[str] = None) -> 
 
 # ── Local Model Engine Class ──────────────────────────────────────────
 
+def _ensure_llama_cpp():
+    """Auto-install pre-compiled binary wheel for llama-cpp-python if missing."""
+    try:
+        from llama_cpp import Llama
+        return Llama
+    except ImportError:
+        pass
+
+    print("⚙️  Auto-installing pre-compiled local GGUF engine (one-time setup)...")
+    import sys
+    import subprocess
+
+    is_win = sys.platform == "win32"
+    if is_win:
+        wheel_url = "https://github.com/abetlen/llama-cpp-python/releases/download/v0.3.34-vulkan/llama_cpp_python-0.3.34-py3-none-win_amd64.whl"
+    else:
+        wheel_url = "https://github.com/abetlen/llama-cpp-python/releases/download/v0.3.34-vulkan/llama_cpp_python-0.3.34-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl"
+
+    installed = False
+    for cmd_base in [["uv", "pip", "install", wheel_url], [sys.executable, "-m", "pip", "install", wheel_url]]:
+        try:
+            res = subprocess.run(cmd_base, capture_output=True, text=True, timeout=120)
+            if res.returncode == 0:
+                installed = True
+                break
+        except Exception:
+            continue
+
+    try:
+        from llama_cpp import Llama
+        print("✅ Pre-compiled local GGUF engine installed successfully!")
+        return Llama
+    except ImportError:
+        raise RuntimeError(
+            "\n╭────────────────────────────────────────────────────────────╮\n"
+            "│  Failed to auto-install local GGUF engine.               │\n"
+            "│  Please check your internet connection for first setup.    │\n"
+            "╰────────────────────────────────────────────────────────────╯"
+        )
+
+
 class LocalModel:
     def __init__(self, repo_id: str = DEFAULT_REPO, n_ctx: int = DEFAULT_CTX_SIZE,
                  n_gpu_layers: Optional[int] = None, token: Optional[str] = None):
@@ -179,20 +220,7 @@ class LocalModel:
             return self._llm
 
         model_path = self.ensure_model()
-
-        try:
-            from llama_cpp import Llama
-        except ImportError:
-            raise RuntimeError(
-                "\n╭─────────────────────────────────────────────────────────╮\n"
-                "│  llama-cpp-python is required for offline mode.        │\n"
-                "│                                                        │\n"
-                "│  Install it with:                                      │\n"
-                "│    pip install alpiecode[local]                        │\n"
-                "│                                                        │\n"
-                "│  Or connect to internet for automatic online mode.     │\n"
-                "╰─────────────────────────────────────────────────────────╯"
-            )
+        Llama = _ensure_llama_cpp()
 
         print(f"🧠 Loading local GGUF model: {model_path.name}")
         print(f"   Context Window: {self.n_ctx} tokens | Acceleration: {'GPU (-1)' if self.n_gpu_layers != 0 else 'CPU (0)'}")
