@@ -69,7 +69,8 @@ def load_config() -> Config:
     if CONFIG_PATH.exists():
         try:
             saved_data = json.loads(CONFIG_PATH.read_text())
-            data.update(saved_data)
+            # Skip null values so they don't override smart defaults (e.g. base_url)
+            data.update({k: v for k, v in saved_data.items() if v is not None})
         except Exception:
             pass
 
