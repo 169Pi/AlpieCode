@@ -345,6 +345,29 @@ Rules:
 4. When all tasks are complete and verified, output: DONE: <concise summary>.
 """
 
+# Compact tool schemas for offline mode — only 6 core tools with minimal descriptions
+# Reduces tool token overhead from ~1990 tokens to ~400 tokens (80% reduction)
+OFFLINE_TOOLS = [
+    {"type": "function", "function": {
+        "name": "bash", "description": "Run a shell command. Returns stdout, stderr, exit_code.",
+        "parameters": {"type": "object", "properties": {"command": {"type": "string"}}, "required": ["command"]}}},
+    {"type": "function", "function": {
+        "name": "read_file", "description": "Read file contents with line numbers.",
+        "parameters": {"type": "object", "properties": {"path": {"type": "string"}, "start_line": {"type": "integer"}, "end_line": {"type": "integer"}}, "required": ["path"]}}},
+    {"type": "function", "function": {
+        "name": "write_file", "description": "Create or overwrite a file.",
+        "parameters": {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}}, "required": ["path", "content"]}}},
+    {"type": "function", "function": {
+        "name": "edit_file", "description": "Replace old_text with new_text in a file.",
+        "parameters": {"type": "object", "properties": {"path": {"type": "string"}, "old_text": {"type": "string"}, "new_text": {"type": "string"}}, "required": ["path", "old_text", "new_text"]}}},
+    {"type": "function", "function": {
+        "name": "list_files", "description": "List files in directory recursively.",
+        "parameters": {"type": "object", "properties": {"path": {"type": "string", "default": "."}}, "required": []}}},
+    {"type": "function", "function": {
+        "name": "update_plan", "description": "Record your execution plan.",
+        "parameters": {"type": "object", "properties": {"plan": {"type": "string"}}, "required": ["plan"]}}},
+]
+
 
 def _build_system_prompt(workdir: Path, is_offline: bool = False) -> str:
     """Build system prompt — uses streamlined prompt in offline mode for 6.5x faster GPU speed."""
@@ -517,12 +540,13 @@ def run_agent(task: str, workdir: Path, cfg: Config, verbose: bool = True,
                     extra_body={"chat_template_kwargs": {"enable_thinking": cfg.enable_thinking}},
                 )
             else:
+                # Offline mode: use compact tools and reduced max_tokens for speed
                 resp = local_model.create_chat_completion(
                     messages=messages,
-                    tools=TOOLS,
+                    tools=OFFLINE_TOOLS,
                     tool_choice="auto",
                     temperature=cfg.temperature,
-                    max_tokens=cfg.max_tokens,
+                    max_tokens=2048,  # Tool calls are compact, 2048 is sufficient
                     enable_thinking=cfg.enable_thinking,
                 )
         except Exception as e:
@@ -740,10 +764,10 @@ def run_chat(workdir: Path, cfg: Config, verbose: bool = True) -> None:
                 else:
                     resp = local_model.create_chat_completion(
                         messages=messages,
-                        tools=TOOLS,
+                        tools=OFFLINE_TOOLS,
                         tool_choice="auto",
                         temperature=cfg.temperature,
-                        max_tokens=cfg.max_tokens,
+                        max_tokens=2048,
                         enable_thinking=cfg.enable_thinking,
                     )
             except Exception as e:

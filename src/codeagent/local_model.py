@@ -182,10 +182,11 @@ class LocalModel:
         self._llm = Llama(
             model_path=str(model_path),
             n_ctx=self.n_ctx,
-            n_batch=2048,       # Process prompts in 2048-token chunks (4x faster prompt evaluation)
-            n_threads=n_threads, # Maximize multi-threading CPU efficiency
+            n_batch=4096,        # Large batch for fast prompt evaluation on GPU
+            n_threads=n_threads,  # Maximize multi-threading for CPU layers
             n_gpu_layers=self.n_gpu_layers,
-            use_mmap=True,      # Instant memory-mapped loading
+            use_mmap=True,       # Instant memory-mapped loading
+            flash_attn=True,     # Flash Attention for faster GPU inference
             verbose=False,
         )
         return self._llm
@@ -199,18 +200,22 @@ class LocalModel:
         llm = self.load()
         
         enable_thinking = kwargs.get("enable_thinking", True)
+        
+        # When thinking is disabled, inject assistant prefill to skip reasoning tokens
+        # This eliminates ~6s of thinking token generation per turn
+        if not enable_thinking:
+            msgs = list(messages) + [{"role": "assistant", "content": "<think>\n\n</think>\n\n"}]
+        else:
+            msgs = messages
+
         params = {
-            "messages": messages,
-            "temperature": temperature,
+            "messages": msgs,
+            "temperature": 0.1 if not enable_thinking else temperature,
             "max_tokens": max_tokens,
         }
         if tools:
             params["tools"] = tools
             params["tool_choice"] = kwargs.get("tool_choice", "auto")
-
-        # If thinking is disabled, pass chat_template_kwargs or lower temperature for direct output
-        if not enable_thinking:
-            params["temperature"] = 0.1
 
         result_dict = llm.create_chat_completion(**params)
         return _DictWrapper(result_dict)
