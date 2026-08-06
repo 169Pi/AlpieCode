@@ -107,7 +107,13 @@ def interactive_init() -> Config:
     print("AlpieCode uses the 169Pi/Alpie_learn_prototype_GGUF_NEW model from HuggingFace.")
     print("Please enter your HuggingFace user access token (required to download model).\n")
 
-    token_prompt = f"HuggingFace Token [{current.hf_token or 'none'}]: "
+    # Mask token for display (show first 3 + last 3 chars only)
+    if current.hf_token:
+        t = current.hf_token
+        masked = f"{t[:3]}***{t[-3:]}" if len(t) > 6 else "***"
+    else:
+        masked = "none"
+    token_prompt = f"HuggingFace Token [{masked}]: "
     hf_token = input(token_prompt).strip() or current.hf_token
 
     repo_prompt = f"Model Repo [{current.model_repo}]: "
