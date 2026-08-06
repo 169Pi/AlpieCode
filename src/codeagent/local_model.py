@@ -165,7 +165,14 @@ class LocalModel:
             from llama_cpp import Llama
         except ImportError:
             raise RuntimeError(
-                "llama-cpp-python package is missing. Install it with: pip install llama-cpp-python"
+                "\n╭─────────────────────────────────────────────────────────╮\n"
+                "│  llama-cpp-python is required for offline mode.        │\n"
+                "│                                                        │\n"
+                "│  Install it with:                                      │\n"
+                "│    pip install alpiecode[local]                        │\n"
+                "│                                                        │\n"
+                "│  Or connect to internet for automatic online mode.     │\n"
+                "╰─────────────────────────────────────────────────────────╯"
             )
 
         print(f"🧠 Loading local GGUF model: {model_path.name}")
