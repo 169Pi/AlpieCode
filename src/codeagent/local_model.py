@@ -65,10 +65,22 @@ def download_model(repo_id: str = DEFAULT_REPO, token: Optional[str] = None) -> 
     """
     Download single GGUF model from HuggingFace using huggingface_hub.
     Saves to ~/.alpiecode/models/ and returns the local Path.
+    
+    OFFLINE-FIRST: Checks local cache before any network call.
     """
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     hf_token = token or os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
 
+    # ── STEP 1: Check local cache FIRST (zero network) ───────────────
+    local_gguf = list(CACHE_DIR.glob("*.gguf"))
+    # Filter out mmproj files for main model
+    local_main = [f for f in local_gguf if "mmproj" not in f.name.lower()]
+    if local_main:
+        return local_main[0]
+    if local_gguf:
+        return local_gguf[0]
+
+    # ── STEP 2: Model not cached — must download from HuggingFace ────
     try:
         from huggingface_hub import hf_hub_download, list_repo_files
     except ImportError:
@@ -76,16 +88,23 @@ def download_model(repo_id: str = DEFAULT_REPO, token: Optional[str] = None) -> 
             "huggingface_hub package is missing. Install it with: pip install huggingface_hub"
         )
 
-    # List files in repo to find the single Q4 GGUF file
+    # List files in repo to find the GGUF file
     try:
         files = list_repo_files(repo_id=repo_id, token=hf_token)
         gguf_files = [f for f in files if f.endswith(".gguf")]
     except Exception as e:
-        # Fallback to local cache search if offline
-        local_files = list(CACHE_DIR.glob("*.gguf"))
-        if local_files:
-            return local_files[0]
-        raise RuntimeError(f"Could not connect to HuggingFace repo {repo_id}: {e}")
+        # No cached model AND no internet — clear error with instructions
+        raise RuntimeError(
+            "\n╭──────────────────────────────────────────────────────────────╮\n"
+            "│  GGUF model not found locally and no internet to download.  │\n"
+            "│                                                             │\n"
+            "│  First-time setup requires internet to download the model.  │\n"
+            "│  Connect to internet and run:                               │\n"
+            "│    alpiecode init                                           │\n"
+            "│                                                             │\n"
+            "│  After the one-time download, offline mode works forever.   │\n"
+            "╰──────────────────────────────────────────────────────────────╯"
+        ) from e
 
     # Separate main model file from mmproj (vision projector) file
     main_gguf_files = [f for f in gguf_files if "mmproj" not in f.lower()]
