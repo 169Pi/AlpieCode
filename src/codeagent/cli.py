@@ -74,7 +74,7 @@ def main():
     common.add_argument("--url", default=None, help="YouTube URL for video analysis")
     common.add_argument("--github", default=None, help="GitHub repository (e.g. owner/repo or URL) for open-source analysis")
     common.add_argument("--max-turns", type=int, default=None, help="Override max turns")
-    common.add_argument("--no-thinking", action="store_true", help="Disable VLM reasoning/thinking mode")
+    common.add_argument("--no-thinking", "--non-thinking", dest="no_thinking", action="store_true", help="Disable VLM reasoning/thinking mode")
     common.add_argument("--no-update", action="store_true", help="Skip automatic update check")
     common.add_argument("--quiet", action="store_true", help="Suppress per-turn logging")
 
