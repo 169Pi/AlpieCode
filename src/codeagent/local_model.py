@@ -170,8 +170,11 @@ def _ensure_llama_cpp():
     import subprocess
 
     is_win = sys.platform == "win32"
+    is_mac = sys.platform == "darwin"
     if is_win:
         wheel_url = "https://github.com/abetlen/llama-cpp-python/releases/download/v0.3.34-vulkan/llama_cpp_python-0.3.34-py3-none-win_amd64.whl"
+    elif is_mac:
+        wheel_url = "https://github.com/abetlen/llama-cpp-python/releases/download/v0.3.34-metal/llama_cpp_python-0.3.34-py3-none-macosx_11_0_arm64.whl"
     else:
         wheel_url = "https://github.com/abetlen/llama-cpp-python/releases/download/v0.3.34-vulkan/llama_cpp_python-0.3.34-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl"
 

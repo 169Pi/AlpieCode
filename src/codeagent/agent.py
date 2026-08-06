@@ -517,7 +517,8 @@ def run_agent(task: str, workdir: Path, cfg: Config, verbose: bool = True,
                 console.print(f"🧠 Local Model: {cfg.model_repo}", style="dim")
                 console.print(f"⚡ Context Window: {cfg.n_ctx} tokens", style="dim")
             console.print(f"🧠 Reasoning: {'ON' if cfg.enable_thinking else 'OFF'}", style="dim")
-            console.print(f"🔧 Tools: {len(TOOLS)} available", style="dim")
+            active_tools = OFFLINE_TOOLS if not server_online else TOOLS
+            console.print(f"🔧 Tools: {len(active_tools)} available", style="dim")
         else:
             console.rule("Agent Started")
             console.print(f"📋 Task: {task.splitlines()[0]}")

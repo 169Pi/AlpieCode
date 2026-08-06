@@ -9,6 +9,7 @@ Resolution order (highest priority first):
 
 import json
 import os
+import socket
 from dataclasses import dataclass, asdict, fields
 from pathlib import Path
 from typing import Optional
@@ -26,7 +27,7 @@ DEFAULTS = {
     "temperature": 0.2,
     "max_tokens": 16384,
     "enable_thinking": True,
-    "n_ctx": 16384,  # 16k context window for fast local loading
+    "n_ctx": 32768,  # 32k context window (model supports up to 131k)
     "n_gpu_layers": None,  # None = auto-detect GPU
 }
 
@@ -36,7 +37,6 @@ def is_server_reachable(base_url: Optional[str], timeout: float = 0.4) -> bool:
     if not base_url:
         return False
     try:
-        import socket
         from urllib.parse import urlparse
         parsed = urlparse(base_url)
         host = parsed.hostname
@@ -69,7 +69,7 @@ class Config:
     temperature: float = 0.2
     max_tokens: int = 16384
     enable_thinking: bool = True
-    n_ctx: int = 16384
+    n_ctx: int = 32768
     n_gpu_layers: Optional[int] = None
 
 
@@ -129,7 +129,10 @@ def interactive_init() -> Config:
     model_repo = input(repo_prompt).strip() or current.model_repo
 
     cfg = Config(
+        base_url=current.base_url,
+        model=current.model,
         model_repo=model_repo,
+        api_key=current.api_key,
         hf_token=hf_token,
         max_turns=current.max_turns,
         temperature=current.temperature,
