@@ -445,10 +445,11 @@ def run_agent(task: str, workdir: Path, cfg: Config, verbose: bool = True,
     workdir = workdir.resolve()
     _ensure_git(workdir)
 
-    from .config import is_server_reachable
+    from .config import is_server_reachable, is_internet_available
     server_online = is_server_reachable(cfg.base_url)
 
     if server_online:
+        # ── ONLINE MODE: Server reachable ─────────────────────────────
         client = OpenAI(
             base_url=cfg.base_url,
             api_key=cfg.api_key or "not-needed",
@@ -456,14 +457,52 @@ def run_agent(task: str, workdir: Path, cfg: Config, verbose: bool = True,
         )
         local_model = None
     else:
-        from .local_model import LocalModel
-        local_model = LocalModel(
-            repo_id=cfg.model_repo,
-            n_ctx=cfg.n_ctx,
-            n_gpu_layers=cfg.n_gpu_layers,
-            token=cfg.hf_token,
-        )
-        client = None
+        # Server unreachable — check if we can fall back to offline
+        has_llama = False
+        try:
+            import llama_cpp  # noqa: F401
+            has_llama = True
+        except ImportError:
+            pass
+
+        if has_llama:
+            # ── OFFLINE MODE: llama-cpp-python available ──────────────
+            from .local_model import LocalModel
+            local_model = LocalModel(
+                repo_id=cfg.model_repo,
+                n_ctx=cfg.n_ctx,
+                n_gpu_layers=cfg.n_gpu_layers,
+                token=cfg.hf_token,
+            )
+            client = None
+        else:
+            # No llama-cpp — check WHY server is unreachable
+            internet_on = is_internet_available()
+            if internet_on:
+                # Internet works but server is down
+                raise RuntimeError(
+                    "\n╭────────────────────────────────────────────────────────────╮\n"
+                    "│  AlpieCode server is temporarily unavailable.             │\n"
+                    f"│  Server: {(cfg.base_url or 'not configured'):<49}│\n"
+                    "│                                                           │\n"
+                    "│  Options:                                                 │\n"
+                    "│    • Try again in a few minutes                           │\n"
+                    "│    • Install offline mode: pip install alpiecode[local]   │\n"
+                    "╰────────────────────────────────────────────────────────────╯"
+                )
+            else:
+                # No internet AND no llama-cpp
+                raise RuntimeError(
+                    "\n╭────────────────────────────────────────────────────────────╮\n"
+                    "│  No internet connection detected.                         │\n"
+                    "│                                                           │\n"
+                    "│  For offline mode, install with GPU support:              │\n"
+                    "│    pip install alpiecode[local]                           │\n"
+                    "│                                                           │\n"
+                    "│  Or connect to internet for automatic online mode.        │\n"
+                    "╰────────────────────────────────────────────────────────────╯"
+                )
+
     dispatch = make_dispatch(workdir)
 
     # Enable offline command interception (blocks pip install, auto-replaces pytest)
@@ -682,7 +721,7 @@ def run_chat(workdir: Path, cfg: Config, verbose: bool = True) -> None:
     workdir = workdir.resolve()
     _ensure_git(workdir)
 
-    from .config import is_server_reachable
+    from .config import is_server_reachable, is_internet_available
     server_online = is_server_reachable(cfg.base_url)
 
     if server_online:
@@ -693,14 +732,47 @@ def run_chat(workdir: Path, cfg: Config, verbose: bool = True) -> None:
         )
         local_model = None
     else:
-        from .local_model import LocalModel
-        local_model = LocalModel(
-            repo_id=cfg.model_repo,
-            n_ctx=cfg.n_ctx,
-            n_gpu_layers=cfg.n_gpu_layers,
-            token=cfg.hf_token,
-        )
-        client = None
+        has_llama = False
+        try:
+            import llama_cpp  # noqa: F401
+            has_llama = True
+        except ImportError:
+            pass
+
+        if has_llama:
+            from .local_model import LocalModel
+            local_model = LocalModel(
+                repo_id=cfg.model_repo,
+                n_ctx=cfg.n_ctx,
+                n_gpu_layers=cfg.n_gpu_layers,
+                token=cfg.hf_token,
+            )
+            client = None
+        else:
+            internet_on = is_internet_available()
+            if internet_on:
+                raise RuntimeError(
+                    "\n╭────────────────────────────────────────────────────────────╮\n"
+                    "│  AlpieCode server is temporarily unavailable.             │\n"
+                    f"│  Server: {(cfg.base_url or 'not configured'):<49}│\n"
+                    "│                                                           │\n"
+                    "│  Options:                                                 │\n"
+                    "│    • Try again in a few minutes                           │\n"
+                    "│    • Install offline mode: pip install alpiecode[local]   │\n"
+                    "╰────────────────────────────────────────────────────────────╯"
+                )
+            else:
+                raise RuntimeError(
+                    "\n╭────────────────────────────────────────────────────────────╮\n"
+                    "│  No internet connection detected.                         │\n"
+                    "│                                                           │\n"
+                    "│  For offline mode, install with GPU support:              │\n"
+                    "│    pip install alpiecode[local]                           │\n"
+                    "│                                                           │\n"
+                    "│  Or connect to internet for automatic online mode.        │\n"
+                    "╰────────────────────────────────────────────────────────────╯"
+                )
+
     dispatch = make_dispatch(workdir)
 
     # Enable offline command interception

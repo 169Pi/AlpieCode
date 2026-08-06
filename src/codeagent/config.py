@@ -49,6 +49,15 @@ def is_server_reachable(base_url: Optional[str], timeout: float = 0.4) -> bool:
         return False
 
 
+def is_internet_available(timeout: float = 1.0) -> bool:
+    """Quick check if general internet is available (ping Google DNS)."""
+    try:
+        with socket.create_connection(("8.8.8.8", 53), timeout=timeout):
+            return True
+    except Exception:
+        return False
+
+
 @dataclass
 class Config:
     base_url: Optional[str] = None
