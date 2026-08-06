@@ -93,18 +93,40 @@ def download_model(repo_id: str = DEFAULT_REPO, token: Optional[str] = None) -> 
         files = list_repo_files(repo_id=repo_id, token=hf_token)
         gguf_files = [f for f in files if f.endswith(".gguf")]
     except Exception as e:
-        # No cached model AND no internet — clear error with instructions
-        raise RuntimeError(
-            "\n╭──────────────────────────────────────────────────────────────╮\n"
-            "│  GGUF model not found locally and no internet to download.  │\n"
-            "│                                                             │\n"
-            "│  First-time setup requires internet to download the model.  │\n"
-            "│  Connect to internet and run:                               │\n"
-            "│    alpiecode init                                           │\n"
-            "│                                                             │\n"
-            "│  After the one-time download, offline mode works forever.   │\n"
-            "╰──────────────────────────────────────────────────────────────╯"
-        ) from e
+        err_str = str(e).lower()
+        # Differentiate auth/access errors vs network errors
+        if "401" in err_str or "unauthorized" in err_str:
+            raise RuntimeError(
+                f"\n❌ HuggingFace Authentication Failed for '{repo_id}'.\n"
+                "   Your HF token is invalid or expired.\n"
+                "   → Go to https://huggingface.co/settings/tokens to generate a new token.\n"
+                "   → Then run: alpiecode init"
+            ) from e
+        elif "403" in err_str or "forbidden" in err_str or "storage limit" in err_str:
+            raise RuntimeError(
+                f"\n❌ HuggingFace Access Denied (403) for '{repo_id}'.\n"
+                "   Your token does not have access to this private repo.\n"
+                "   → Ask the 169Pi team to grant you access, or check your token permissions."
+            ) from e
+        elif "404" in err_str or "not found" in err_str:
+            raise RuntimeError(
+                f"\n❌ HuggingFace repo '{repo_id}' not found (404).\n"
+                "   The model repository may not exist or is private.\n"
+                "   → Verify the repo name and ensure your HF token has read access."
+            ) from e
+        else:
+            raise RuntimeError(
+                "\n╭──────────────────────────────────────────────────────────────╮\n"
+                "│  GGUF model not found locally and could not download.      │\n"
+                "│                                                             │\n"
+                f"│  Error: {str(e)[:52]:<53}│\n"
+                "│                                                             │\n"
+                "│  Connect to internet and run:                               │\n"
+                "│    alpiecode init                                           │\n"
+                "│                                                             │\n"
+                "│  After the one-time download, offline mode works forever.   │\n"
+                "╰──────────────────────────────────────────────────────────────╯"
+            ) from e
 
     # Separate main model file from mmproj (vision projector) file
     main_gguf_files = [f for f in gguf_files if "mmproj" not in f.lower()]
