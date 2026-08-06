@@ -151,4 +151,14 @@ def interactive_init() -> Config:
         print(f"⚠️ Could not download model right now: {e}")
         print("   Model will be downloaded automatically on first task execution.")
 
+    # Pre-install llama-cpp-python binary wheel (so offline mode works immediately)
+    try:
+        from .local_model import _ensure_llama_cpp
+        print("\n⚙️  Setting up offline GGUF engine...")
+        _ensure_llama_cpp()
+        print("✅ Offline mode ready — works without internet from now on!")
+    except Exception as e:
+        print(f"⚠️ Could not setup offline engine: {e}")
+        print("   It will be installed automatically when needed.")
+
     return cfg

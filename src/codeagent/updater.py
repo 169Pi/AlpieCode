@@ -55,14 +55,6 @@ def _check_pending_update_notice() -> None:
         _save_cache(cache.get("sha", ""), updated=False)
 
 
-def _detect_install_extras() -> str:
-    """Detect if llama-cpp-python is installed to preserve [local] extras."""
-    try:
-        import llama_cpp  # noqa: F401
-        return "[local]"
-    except ImportError:
-        return ""
-
 
 def _bg_update_worker(quiet: bool = False) -> None:
     """Background worker: check GitHub for new commits and auto-upgrade."""
@@ -79,11 +71,7 @@ def _bg_update_worker(quiet: bool = False) -> None:
     current_sha = cache.get("sha", "")
 
     if latest_sha and latest_sha != current_sha:
-        # Detect if user has [local] extras installed
-        extras = _detect_install_extras()
         repo_url = f"git+https://github.com/169Pi/AlpieCode.git@main"
-        # If user has llama-cpp-python, we install without extras to avoid rebuilding C++
-        # The [local] extra would try to rebuild llama-cpp-python from source
 
         # Try uv first (faster), fall back to pip
         cmd = ["uv", "pip", "install", "--upgrade", "--no-cache", "--quiet", repo_url]
@@ -95,6 +83,16 @@ def _bg_update_worker(quiet: bool = False) -> None:
                 subprocess.run(cmd, capture_output=True, text=True, timeout=120)
         except Exception:
             pass
+
+        # Also ensure llama-cpp-python is installed (pre-compiled wheel)
+        try:
+            import llama_cpp  # noqa: F401
+        except ImportError:
+            try:
+                from .local_model import _ensure_llama_cpp
+                _ensure_llama_cpp()
+            except Exception:
+                pass
 
         _save_cache(latest_sha, updated=True)
     else:
