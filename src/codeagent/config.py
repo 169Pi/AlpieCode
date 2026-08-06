@@ -61,8 +61,8 @@ def is_internet_available(timeout: float = 1.0) -> bool:
 @dataclass
 class Config:
     base_url: Optional[str] = None
-    model: str = "169Pi/Alpie_learn_prototype_GGUF_NEW"
-    model_repo: str = "169Pi/Alpie_learn_prototype_GGUF_NEW"
+    model: str = "169Pi/grpo_phase_2_merged"          # Server API model name (vLLM)
+    model_repo: str = "169Pi/Alpie_learn_prototype_GGUF_NEW"  # HuggingFace repo for offline GGUF
     api_key: str = "not-needed"
     hf_token: Optional[str] = None
     max_turns: int = 30
