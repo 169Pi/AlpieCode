@@ -13,6 +13,7 @@ import json
 import re
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import httpx
@@ -22,6 +23,26 @@ from .config import Config
 from .tools import TOOLS, make_dispatch
 from .compaction import needs_compaction, compact_messages
 from .memory import format_memories_for_prompt, extract_and_save_memories
+
+# ── Tool classification for parallel dispatch ─────────────────────────
+# READ_ONLY tools can execute concurrently; MUTATING tools must be sequential
+READ_ONLY_TOOLS = frozenset({"read_file", "list_files", "file_search", "fetch_url", "web_search"})
+
+
+def _is_simple_task(task: str) -> bool:
+    """Detect simple tasks that don't benefit from deep reasoning traces."""
+    task_lower = task.lower().strip()
+    # Short prompts (< 80 chars) are almost always simple
+    if len(task_lower) < 80:
+        return True
+    # Keyword patterns indicating simple edits
+    simple_patterns = [
+        "fix typo", "add comment", "rename", "format", "add docstring",
+        "remove unused", "add import", "update version", "change color",
+        "fix indent", "add logging", "hello world", "fibonacci",
+        "print ", "add a test", "calculator",
+    ]
+    return any(pat in task_lower for pat in simple_patterns)
 
 SYSTEM_PROMPT = """\
 You are AlpieCode, an autonomous software-engineering agent built by 169Pi. You operate \
@@ -482,10 +503,11 @@ def run_agent(task: str, workdir: Path, cfg: Config, verbose: bool = True,
 
     if server_online:
         # ── ONLINE MODE: Server reachable ─────────────────────────────
+        from .config import get_shared_http_client
         client = OpenAI(
             base_url=cfg.base_url,
             api_key=cfg.api_key or "not-needed",
-            timeout=httpx.Timeout(30.0, connect=3.0),
+            http_client=get_shared_http_client(),
         )
         local_model = None
     else:
@@ -558,6 +580,14 @@ def run_agent(task: str, workdir: Path, cfg: Config, verbose: bool = True,
 
     compile_fail_counts = {}  # Track compilation failures per file
     tool_call_history = []    # Track repeated tool calls to prevent infinite loops
+
+    # ── Adaptive Thinking Router ──────────────────────────────────────
+    # Auto-disable thinking for simple tasks to save 10-20s of reasoning
+    if cfg.enable_thinking and _is_simple_task(task):
+        cfg = Config(**{f.name: getattr(cfg, f.name) for f in cfg.__dataclass_fields__.values()})
+        cfg.enable_thinking = False
+        if verbose and HAS_RICH:
+            console.print("⚡ [dim]Adaptive mode: simple task detected, skipping deep reasoning for speed[/dim]")
 
     for turn in range(cfg.max_turns):
         # Context compaction check — use actual n_ctx for offline (32k), full for online (262k)
@@ -665,6 +695,46 @@ def run_agent(task: str, workdir: Path, cfg: Config, verbose: bool = True,
                 })
 
         if raw_tool_calls:
+            # ── Parallel Multi-Tool Dispatch Engine ───────────────────
+            # Classify calls: execute contiguous READ_ONLY tools concurrently
+            # Mutating tools (write_file, edit_file, bash) remain sequential
+            all_read_only = all(tc["name"] in READ_ONLY_TOOLS for tc in raw_tool_calls)
+            use_parallel = all_read_only and len(raw_tool_calls) > 1
+
+            if use_parallel:
+                # Execute all read-only tools concurrently
+                if verbose and HAS_RICH:
+                    console.print(f"   ⚡ [dim]Parallel dispatch: {len(raw_tool_calls)} read-only tools[/dim]")
+                results_map = {}
+                with ThreadPoolExecutor(max_workers=min(8, len(raw_tool_calls))) as pool:
+                    future_to_tc = {}
+                    for tc in raw_tool_calls:
+                        fn_name = tc["name"]
+                        args = tc["arguments"]
+                        if verbose:
+                            _print_tool_call(turn, fn_name, args)
+                        future = pool.submit(dispatch[fn_name], args)
+                        future_to_tc[future] = tc
+                    for future in as_completed(future_to_tc):
+                        tc = future_to_tc[future]
+                        try:
+                            results_map[tc["id"]] = future.result()
+                        except Exception as e:
+                            results_map[tc["id"]] = f"error: {e}"
+                # Append results in original order
+                for tc in raw_tool_calls:
+                    result = str(results_map[tc["id"]])
+                    if verbose:
+                        _print_tool_result(result)
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc["id"],
+                        "content": result,
+                    })
+                _checkpoint(workdir, f"checkpoint: turn {turn + 1}")
+                continue
+
+            # Sequential execution for mutating tools (or single tool calls)
             for tc in raw_tool_calls:
                 fn_name = tc["name"]
                 args = tc["arguments"]
@@ -775,10 +845,11 @@ def run_chat(workdir: Path, cfg: Config, verbose: bool = True) -> None:
     server_online = is_server_reachable(cfg.base_url)
 
     if server_online:
+        from .config import get_shared_http_client
         client = OpenAI(
             base_url=cfg.base_url,
             api_key=cfg.api_key or "not-needed",
-            timeout=httpx.Timeout(30.0, connect=3.0),
+            http_client=get_shared_http_client(),
         )
         local_model = None
     else:
