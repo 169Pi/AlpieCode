@@ -1,3 +1,0 @@
-[console_scripts]
-alpiecode = codeagent.cli:main
-codeagent = codeagent.cli:main

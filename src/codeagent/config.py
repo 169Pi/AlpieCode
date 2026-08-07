@@ -75,7 +75,7 @@ def get_shared_http_client():
         import httpx
         _SHARED_HTTP_CLIENT = httpx.Client(
             http2=True,
-            timeout=httpx.Timeout(30.0, connect=3.0),
+            timeout=httpx.Timeout(120.0, connect=5.0),
             limits=httpx.Limits(max_keepalive_connections=20, max_connections=50),
         )
     return _SHARED_HTTP_CLIENT
