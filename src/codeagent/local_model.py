@@ -7,6 +7,7 @@ Provides an OpenAI-compatible `create_chat_completion` interface.
 """
 
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -395,8 +396,6 @@ class LocalModel:
         
         enable_thinking = kwargs.get("enable_thinking", True)
         
-        # When thinking is disabled, inject assistant prefill to skip reasoning tokens
-        # This eliminates ~6s of thinking token generation per turn
         if not enable_thinking:
             msgs = list(messages) + [{"role": "assistant", "content": "<think>\n\n</think>\n\n"}]
         else:
@@ -412,6 +411,15 @@ class LocalModel:
             params["tool_choice"] = kwargs.get("tool_choice", "auto")
 
         result_dict = llm.create_chat_completion(**params)
+
+        # Fix prefill response content so chat history remains valid across multi-turn sessions
+        if not enable_thinking and result_dict.get("choices"):
+            msg_dict = result_dict["choices"][0].get("message", {})
+            raw_content = msg_dict.get("content") or ""
+            # Strip redundant opening/closing think tags output by model after prefill
+            cleaned = re.sub(r"^\s*(?:</think>|<think>)*\s*", "", raw_content)
+            msg_dict["content"] = f"<think>\n\n</think>\n\n{cleaned}"
+
         return _DictWrapper(result_dict)
 
 
