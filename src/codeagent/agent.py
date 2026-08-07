@@ -574,15 +574,46 @@ def run_agent(task: str, workdir: Path, cfg: Config, verbose: bool = True,
 
         try:
             if client:
-                resp = client.chat.completions.create(
-                    model=cfg.model,
-                    messages=messages,
-                    tools=TOOLS,
-                    tool_choice="auto",
-                    temperature=cfg.temperature,
-                    max_tokens=cfg.max_tokens,
-                    extra_body={"chat_template_kwargs": {"enable_thinking": cfg.enable_thinking}},
-                )
+                try:
+                    resp = client.chat.completions.create(
+                        model=cfg.model,
+                        messages=messages,
+                        tools=TOOLS,
+                        tool_choice="auto",
+                        temperature=cfg.temperature,
+                        max_tokens=cfg.max_tokens,
+                        extra_body={"chat_template_kwargs": {"enable_thinking": cfg.enable_thinking}},
+                    )
+                except Exception as online_err:
+                    if verbose:
+                        if HAS_RICH:
+                            console.print(f"\n⚠️  [bold yellow]Online Server Error / Timeout[/bold yellow] ({online_err})", style="yellow")
+                            console.print("🔄 [bold cyan]Auto-falling back to local GGUF engine...[/bold cyan]", style="cyan")
+                        else:
+                            print(f"\n⚠️ Online Server Error: {online_err}")
+                            print("🔄 Auto-falling back to local GGUF engine...")
+
+                    # Switch to offline mode seamlessly
+                    client = None
+                    server_online = False
+                    from .tools import _bash
+                    _bash._offline_mode = True
+                    if local_model is None:
+                        from .local_model import LocalModel
+                        local_model = LocalModel(
+                            repo_id=cfg.model_repo,
+                            n_ctx=cfg.n_ctx,
+                            n_gpu_layers=cfg.n_gpu_layers,
+                            token=cfg.hf_token,
+                        )
+                    resp = local_model.create_chat_completion(
+                        messages=messages,
+                        tools=OFFLINE_TOOLS,
+                        tool_choice="auto",
+                        temperature=cfg.temperature,
+                        max_tokens=2048,
+                        enable_thinking=cfg.enable_thinking,
+                    )
             else:
                 # Offline mode: use compact tools and reduced max_tokens for speed
                 resp = local_model.create_chat_completion(
@@ -804,15 +835,44 @@ def run_chat(workdir: Path, cfg: Config, verbose: bool = True) -> None:
 
             try:
                 if client:
-                    resp = client.chat.completions.create(
-                        model=cfg.model,
-                        messages=messages,
-                        tools=TOOLS,
-                        tool_choice="auto",
-                        temperature=cfg.temperature,
-                        max_tokens=cfg.max_tokens,
-                        extra_body={"chat_template_kwargs": {"enable_thinking": cfg.enable_thinking}},
-                    )
+                    try:
+                        resp = client.chat.completions.create(
+                            model=cfg.model,
+                            messages=messages,
+                            tools=TOOLS,
+                            tool_choice="auto",
+                            temperature=cfg.temperature,
+                            max_tokens=cfg.max_tokens,
+                            extra_body={"chat_template_kwargs": {"enable_thinking": cfg.enable_thinking}},
+                        )
+                    except Exception as online_err:
+                        if HAS_RICH:
+                            console.print(f"\n⚠️  [bold yellow]Online Server Error / Timeout[/bold yellow] ({online_err})", style="yellow")
+                            console.print("🔄 [bold cyan]Auto-falling back to local GGUF engine...[/bold cyan]", style="cyan")
+                        else:
+                            print(f"\n⚠️ Online Server Error: {online_err}")
+                            print("🔄 Auto-falling back to local GGUF engine...")
+
+                        client = None
+                        server_online = False
+                        from .tools import _bash
+                        _bash._offline_mode = True
+                        if local_model is None:
+                            from .local_model import LocalModel
+                            local_model = LocalModel(
+                                repo_id=cfg.model_repo,
+                                n_ctx=cfg.n_ctx,
+                                n_gpu_layers=cfg.n_gpu_layers,
+                                token=cfg.hf_token,
+                            )
+                        resp = local_model.create_chat_completion(
+                            messages=messages,
+                            tools=OFFLINE_TOOLS,
+                            tool_choice="auto",
+                            temperature=cfg.temperature,
+                            max_tokens=2048,
+                            enable_thinking=cfg.enable_thinking,
+                        )
                 else:
                     resp = local_model.create_chat_completion(
                         messages=messages,
@@ -823,7 +883,7 @@ def run_chat(workdir: Path, cfg: Config, verbose: bool = True) -> None:
                         enable_thinking=cfg.enable_thinking,
                     )
             except Exception as e:
-                console.print(f"❌ Local model error: {e}", style="bold red" if HAS_RICH else None)
+                console.print(f"❌ Model error: {e}", style="bold red" if HAS_RICH else None)
                 break
 
             msg = resp.choices[0].message
