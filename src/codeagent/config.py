@@ -111,6 +111,11 @@ def load_config() -> Config:
         data["hf_token"] = os.environ["HF_TOKEN"]
     if os.environ.get("ALPIECODE_CPU") == "1":
         data["n_gpu_layers"] = 0
+    elif os.environ.get("ALPIECODE_GPU_LAYERS"):
+        try:
+            data["n_gpu_layers"] = int(os.environ["ALPIECODE_GPU_LAYERS"])
+        except ValueError:
+            pass
 
     # Filter data to only keys present in Config fields
     valid_keys = {f.name for f in fields(Config)}

@@ -30,8 +30,11 @@ if sys.platform.startswith("linux"):
 
 def detect_gpu() -> int:
     """
-    Detect if GPU offloading is supported and available.
-    Returns number of layers to offload: -1 (all), 26 (6GB VRAM), 0 (CPU only).
+    Detect GPU hardware and return optimal layer offload count.
+    Returns: -1 (all layers to GPU), 26 (6GB VRAM), 0 (CPU only).
+
+    Priority: NVIDIA (nvidia-smi) > macOS Metal > Vulkan discrete GPU > CPU.
+    Skips Intel/AMD integrated GPUs (UHD, Iris, Vega) — too weak for LLM inference.
     """
     if os.environ.get("CUDA_VISIBLE_DEVICES") == "-1":
         return 0
@@ -47,38 +50,34 @@ def detect_gpu() -> int:
     import subprocess
     import platform
 
-    # Check NVIDIA GPU via nvidia-smi
+    # ── 1. NVIDIA GPU (highest priority — most common dedicated GPU) ──
     try:
         res = subprocess.run(
             ["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits"],
-            capture_output=True, text=True, timeout=2
+            capture_output=True, text=True, timeout=3
         )
         if res.returncode == 0 and res.stdout.strip():
             vram_mb = int(res.stdout.strip().split("\n")[0])
-            if vram_mb <= 6500:  # 6GB VRAM GPU (e.g. RTX 3050 Laptop)
-                return 26  # Offload 26 layers, keep 2GB VRAM free
-            return -1  # 8GB+ VRAM, offload all layers
+            if vram_mb <= 6500:  # 6GB VRAM (e.g. RTX 3050 Laptop)
+                return 26  # Partial offload — keep 2GB VRAM free
+            return -1  # 8GB+ VRAM — offload all layers
     except Exception:
         pass
 
-    # Check macOS Metal (Apple Silicon)
+    # ── 2. macOS Metal (Apple Silicon — unified memory, always fast) ──
     if platform.system() == "Darwin":
         try:
-            res = subprocess.run(["sysctl", "-n", "hw.memsize"], capture_output=True, text=True, timeout=2)
+            res = subprocess.run(["sysctl", "-n", "hw.memsize"],
+                                 capture_output=True, text=True, timeout=2)
             if res.returncode == 0 and res.stdout.strip():
-                return -1  # Apple Silicon has unified memory, offload all
+                return -1  # Apple Silicon — offload all layers
         except Exception:
             pass
 
-    # Check Vulkan GPU
-    try:
-        res = subprocess.run(["vulkaninfo", "--summary"], capture_output=True, text=True, timeout=2)
-        if res.returncode == 0 and "deviceName" in res.stdout:
-            return -1  # Vulkan GPU found
-    except Exception:
-        pass
-
-    # No GPU hardware found — use CPU only
+    # ── 3. No dedicated GPU found — use CPU ──
+    # NOTE: We intentionally skip Vulkan-only GPUs (Intel UHD, Intel Iris,
+    # AMD Vega integrated) because they are too slow for LLM inference.
+    # Users with AMD discrete GPUs can set ALPIECODE_GPU_LAYERS=-1 to force.
     return 0
 
 
