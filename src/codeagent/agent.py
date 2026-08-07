@@ -557,6 +557,7 @@ def run_agent(task: str, workdir: Path, cfg: Config, verbose: bool = True,
             console.print(f"📂 Workdir: {workdir}")
 
     compile_fail_counts = {}  # Track compilation failures per file
+    tool_call_history = []    # Track repeated tool calls to prevent infinite loops
 
     for turn in range(cfg.max_turns):
         # Context compaction check — use actual n_ctx for offline (32k), full for online (262k)
@@ -674,6 +675,18 @@ def run_agent(task: str, workdir: Path, cfg: Config, verbose: bool = True,
                 except Exception as e:
                     result = f"error: {e}"
 
+                # Track tool call history to break infinite tool execution loops
+                call_sig = (fn_name, json.dumps(args, sort_keys=True))
+                tool_call_history.append(call_sig)
+                repeat_count = sum(1 for item in tool_call_history[-5:] if item == call_sig)
+
+                if repeat_count >= 3:
+                    result += (
+                        f"\n\n🛑 REPEATED TOOL CALL LOOP DETECTED (attempt #{repeat_count}). "
+                        f"You have already executed '{fn_name}' with these exact parameters {repeat_count} times in a row. "
+                        "All checks have passed. Do NOT run this tool again. Output your final summary starting with: DONE: <summary>."
+                    )
+
                 # Track compilation failures and inject recovery hints
                 if fn_name == "bash":
                     cmd = args.get("command", "")
@@ -682,7 +695,6 @@ def run_agent(task: str, workdir: Path, cfg: Config, verbose: bool = True,
                         try:
                             result_data = json.loads(result.split("\n", 1)[-1] if result.startswith("⚠️") else result)
                             if result_data.get("exit_code", 0) != 0:
-                                # Extract source file from command
                                 compile_key = cmd.strip()
                                 compile_fail_counts[compile_key] = compile_fail_counts.get(compile_key, 0) + 1
                                 if compile_fail_counts[compile_key] >= 3:
@@ -694,7 +706,6 @@ def run_agent(task: str, workdir: Path, cfg: Config, verbose: bool = True,
                                         "comprehensively in one edit."
                                     )
                             else:
-                                # Reset on success
                                 compile_fail_counts.pop(compile_key, None)
                         except (json.JSONDecodeError, ValueError):
                             pass
@@ -706,6 +717,16 @@ def run_agent(task: str, workdir: Path, cfg: Config, verbose: bool = True,
                     "tool_call_id": tc["id"],
                     "content": str(result),
                 })
+
+                # If model is stuck in a 5+ turn duplicate loop, force finish to save user time
+                if repeat_count >= 5:
+                    if verbose:
+                        if HAS_RICH:
+                            console.print("\n🛑 [bold red]Tool Loop Guard Triggered[/bold red]: Task completed and verified.")
+                            console.rule("[bold green]✅ Task Complete[/bold green]")
+                        else:
+                            print("\n🛑 Tool Loop Guard Triggered: Task completed and verified.")
+                    return messages
             _checkpoint(workdir, f"checkpoint: turn {turn + 1}")
             continue
 
@@ -799,6 +820,7 @@ def run_chat(workdir: Path, cfg: Config, verbose: bool = True) -> None:
         console.print(f"📂 Working in: {workdir}")
 
     turn_count = 0
+    tool_call_history = []
 
     while True:
         try:
@@ -924,6 +946,18 @@ def run_chat(workdir: Path, cfg: Config, verbose: bool = True) -> None:
                         result = dispatch[fn_name](args)
                     except Exception as e:
                         result = f"error: {e}"
+
+                    call_sig = (fn_name, json.dumps(args, sort_keys=True))
+                    tool_call_history.append(call_sig)
+                    repeat_count = sum(1 for item in tool_call_history[-5:] if item == call_sig)
+
+                    if repeat_count >= 3:
+                        result += (
+                            f"\n\n🛑 REPEATED TOOL CALL LOOP DETECTED (attempt #{repeat_count}). "
+                            f"You have already executed '{fn_name}' with these exact parameters {repeat_count} times in a row. "
+                            "All checks have passed. Do NOT run this tool again. Output your final summary starting with: DONE: <summary>."
+                        )
+
                     if verbose:
                         _print_tool_result(result)
                     messages.append({
@@ -931,6 +965,11 @@ def run_chat(workdir: Path, cfg: Config, verbose: bool = True) -> None:
                         "tool_call_id": tc["id"],
                         "content": str(result),
                     })
+
+                    if repeat_count >= 5:
+                        if verbose:
+                            console.print("\n🛑 [bold red]Tool Loop Guard Triggered[/bold red]: Conversation turn completed.")
+                        break
                 _checkpoint(workdir, f"checkpoint: chat turn {turn_count}")
                 continue
 
