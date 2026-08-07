@@ -559,8 +559,9 @@ def run_agent(task: str, workdir: Path, cfg: Config, verbose: bool = True,
     compile_fail_counts = {}  # Track compilation failures per file
 
     for turn in range(cfg.max_turns):
-        # Context compaction check
-        if needs_compaction(messages):
+        # Context compaction check — use actual n_ctx for offline (32k), full for online (262k)
+        ctx_limit = cfg.n_ctx if not server_online else 262_144
+        if needs_compaction(messages, max_tokens=ctx_limit):
             if verbose:
                 console.print("🗜️  Compacting context (approaching token limit)...", style="yellow")
             messages = compact_messages(messages)
@@ -725,7 +726,7 @@ def run_chat(workdir: Path, cfg: Config, verbose: bool = True) -> None:
         client = OpenAI(
             base_url=cfg.base_url,
             api_key=cfg.api_key or "not-needed",
-            timeout=httpx.Timeout(60.0, connect=5.0),
+            timeout=httpx.Timeout(30.0, connect=3.0),
         )
         local_model = None
     else:
@@ -746,6 +747,7 @@ def run_chat(workdir: Path, cfg: Config, verbose: bool = True) -> None:
         _bash._offline_mode = True
 
     is_offline = not server_online
+    active_tools = OFFLINE_TOOLS if is_offline else TOOLS
     messages = [
         {"role": "system", "content": _build_system_prompt(workdir, is_offline=is_offline)},
     ]
@@ -755,8 +757,8 @@ def run_chat(workdir: Path, cfg: Config, verbose: bool = True) -> None:
         console.print(Panel(
             "[bold cyan]AlpieCode[/bold cyan] interactive mode\n"
             f"📂 Working in: [cyan]{workdir}[/cyan]\n"
-            + (f"🌐 Mode: [bold green]ONLINE[/bold green] (Server: {cfg.base_url})\n" if server_online else f"🧠 Mode: [bold yellow]OFFLINE[/bold yellow] (Local GGUF GPU Engine)\n")
-            + f"🔧 Tools: [cyan]{len(TOOLS)} available[/cyan]\n\n"
+            + (f"🌐 Mode: [bold green]ONLINE[/bold green] (Server: {cfg.base_url})\n" if server_online else f"🧠 Mode: [bold yellow]OFFLINE[/bold yellow] (Local GGUF Engine)\n")
+            + f"🔧 Tools: [cyan]{len(active_tools)} available[/cyan]\n\n"
             "Type your request, or [bold red]exit[/bold red] / [bold red]quit[/bold red] to stop.",
             title="💬 Chat Mode",
             border_style="blue",
@@ -786,8 +788,9 @@ def run_chat(workdir: Path, cfg: Config, verbose: bool = True) -> None:
         messages.append({"role": "user", "content": user_input})
 
         for _ in range(cfg.max_turns):
-            # Compaction check
-            if needs_compaction(messages):
+            # Compaction check — use actual n_ctx for offline
+            ctx_limit = cfg.n_ctx if not server_online else 262_144
+            if needs_compaction(messages, max_tokens=ctx_limit):
                 if verbose:
                     console.print("🗜️  Compacting context...", style="yellow")
                 messages = compact_messages(messages)
@@ -833,20 +836,39 @@ def run_chat(workdir: Path, cfg: Config, verbose: bool = True) -> None:
             if msg.tool_calls or msg.content:
                 messages.append(serialized)
 
+            # Extract standard or text-formatted tool calls (same as run_agent)
+            raw_tool_calls = []
             if msg.tool_calls:
                 for tc in msg.tool_calls:
-                    args = json.loads(tc.function.arguments or "{}")
+                    raw_tool_calls.append({
+                        "id": tc.id,
+                        "name": tc.function.name,
+                        "arguments": json.loads(tc.function.arguments or "{}"),
+                    })
+            elif msg.content and "<tool_call>" in msg.content:
+                parsed_calls = _parse_text_tool_calls(msg.content)
+                for i, tc in enumerate(parsed_calls):
+                    raw_tool_calls.append({
+                        "id": f"text_call_{i+1}",
+                        "name": tc["name"],
+                        "arguments": tc["arguments"],
+                    })
+
+            if raw_tool_calls:
+                for tc in raw_tool_calls:
+                    fn_name = tc["name"]
+                    args = tc["arguments"]
                     if verbose:
-                        _print_tool_call(turn_count, tc.function.name, args)
+                        _print_tool_call(turn_count, fn_name, args)
                     try:
-                        result = dispatch[tc.function.name](args)
+                        result = dispatch[fn_name](args)
                     except Exception as e:
                         result = f"error: {e}"
                     if verbose:
                         _print_tool_result(result)
                     messages.append({
                         "role": "tool",
-                        "tool_call_id": tc.id,
+                        "tool_call_id": tc["id"],
                         "content": str(result),
                     })
                 _checkpoint(workdir, f"checkpoint: chat turn {turn_count}")

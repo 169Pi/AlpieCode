@@ -44,10 +44,10 @@ def estimate_tokens(messages: List[dict]) -> int:
     return total_chars // CHARS_PER_TOKEN
 
 
-def needs_compaction(messages: List[dict]) -> bool:
+def needs_compaction(messages: List[dict], max_tokens: int = MAX_CONTEXT_TOKENS) -> bool:
     """Check if the conversation needs compaction."""
     tokens = estimate_tokens(messages)
-    return tokens > (MAX_CONTEXT_TOKENS * COMPACT_THRESHOLD)
+    return tokens > (max_tokens * COMPACT_THRESHOLD)
 
 
 def _summarize_tool_result(tool_name: str, content: str) -> str:

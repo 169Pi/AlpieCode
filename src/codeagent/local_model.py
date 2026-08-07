@@ -275,20 +275,56 @@ class LocalModel:
         model_path = self.ensure_model()
         Llama = _ensure_llama_cpp()
 
+        accel = "GPU" if self.n_gpu_layers != 0 else "CPU"
         print(f"🧠 Loading local GGUF model: {model_path.name}")
-        print(f"   Context Window: {self.n_ctx} tokens | Acceleration: {'GPU (-1)' if self.n_gpu_layers != 0 else 'CPU (0)'}")
+        print(f"   Context: {self.n_ctx} tokens | Mode: {accel} | Threads: {max(1, (os.cpu_count() or 4) - 1)}")
+        if accel == "CPU":
+            print(f"   ⏳ CPU loading ~4GB model — this takes 30-90 seconds on first run...")
+        else:
+            print(f"   ⚡ GPU-accelerated loading...")
 
         n_threads = max(1, (os.cpu_count() or 4) - 1)
-        self._llm = Llama(
-            model_path=str(model_path),
-            n_ctx=self.n_ctx,
-            n_batch=4096,        # Large batch for fast prompt evaluation on GPU
-            n_threads=n_threads,  # Maximize multi-threading for CPU layers
-            n_gpu_layers=self.n_gpu_layers,
-            use_mmap=True,       # Instant memory-mapped loading
-            flash_attn=True,     # Flash Attention for faster GPU inference
-            verbose=False,
-        )
+
+        # Suppress noisy ggml_vulkan/ggml_cuda stderr messages from C library
+        # These confuse users ("ggml_vulkan: Found 1 Vulkan devices: Intel UHD...")
+        import time
+        t0 = time.monotonic()
+        _stderr_fd = None
+        _devnull_fd = None
+        try:
+            _stderr_fd = os.dup(2)
+            _devnull_fd = os.open(os.devnull, os.O_WRONLY)
+            os.dup2(_devnull_fd, 2)
+        except Exception:
+            _stderr_fd = None  # Fallback: don't suppress if dup2 fails
+
+        try:
+            self._llm = Llama(
+                model_path=str(model_path),
+                n_ctx=self.n_ctx,
+                n_batch=2048 if self.n_gpu_layers == 0 else 4096,
+                n_threads=n_threads,
+                n_gpu_layers=self.n_gpu_layers,
+                use_mmap=True,
+                flash_attn=(self.n_gpu_layers != 0),  # Flash Attention only for GPU
+                verbose=False,
+            )
+        finally:
+            # Restore stderr
+            if _stderr_fd is not None:
+                try:
+                    os.dup2(_stderr_fd, 2)
+                    os.close(_stderr_fd)
+                except Exception:
+                    pass
+            if _devnull_fd is not None:
+                try:
+                    os.close(_devnull_fd)
+                except Exception:
+                    pass
+
+        elapsed = time.monotonic() - t0
+        print(f"   ✅ Model loaded in {elapsed:.1f}s — ready!")
         return self._llm
 
     def create_chat_completion(self, messages: List[Dict[str, Any]], tools: Optional[List[Dict[str, Any]]] = None,
