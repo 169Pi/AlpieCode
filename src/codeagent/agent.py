@@ -489,7 +489,7 @@ def run_agent(task: str, workdir: Path, cfg: Config, verbose: bool = True,
         workdir=workdir,
     )
 
-    is_offline = (cfg.base_url is None)
+    is_offline = not server_online
     messages = [
         {"role": "system", "content": _build_system_prompt(workdir, is_offline=is_offline)},
         {"role": "user", "content": user_content},
