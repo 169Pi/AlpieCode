@@ -453,7 +453,7 @@ def run_agent(task: str, workdir: Path, cfg: Config, verbose: bool = True,
         client = OpenAI(
             base_url=cfg.base_url,
             api_key=cfg.api_key or "not-needed",
-            timeout=httpx.Timeout(60.0, connect=5.0),
+            timeout=httpx.Timeout(30.0, connect=3.0),
         )
         local_model = None
     else:
@@ -693,7 +693,7 @@ def run_chat(workdir: Path, cfg: Config, verbose: bool = True) -> None:
         client = OpenAI(
             base_url=cfg.base_url,
             api_key=cfg.api_key or "not-needed",
-            timeout=httpx.Timeout(300.0, connect=10.0),
+            timeout=httpx.Timeout(60.0, connect=5.0),
         )
         local_model = None
     else:

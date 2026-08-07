@@ -224,13 +224,17 @@ def _ensure_llama_cpp():
         wheel_url = "https://github.com/abetlen/llama-cpp-python/releases/download/v0.3.34-vulkan/llama_cpp_python-0.3.34-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl"
 
     installed = False
+    last_error = ""
     for cmd_base in [["uv", "pip", "install", wheel_url], [sys.executable, "-m", "pip", "install", wheel_url]]:
         try:
             res = subprocess.run(cmd_base, capture_output=True, text=True, timeout=120)
             if res.returncode == 0:
                 installed = True
                 break
-        except Exception:
+            else:
+                last_error = res.stderr.strip() or res.stdout.strip()
+        except Exception as e:
+            last_error = str(e)
             continue
 
     try:
@@ -238,11 +242,13 @@ def _ensure_llama_cpp():
         print("✅ Pre-compiled local GGUF engine installed successfully!")
         return Llama
     except ImportError:
+        err_detail = f"\n   Last error: {last_error[:200]}" if last_error else ""
         raise RuntimeError(
             "\n╭────────────────────────────────────────────────────────────╮\n"
             "│  Failed to auto-install local GGUF engine.               │\n"
-            "│  Please check your internet connection for first setup.    │\n"
+            "│  Internet connection required for first-time setup.      │\n"
             "╰────────────────────────────────────────────────────────────╯"
+            f"{err_detail}"
         )
 
 

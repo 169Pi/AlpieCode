@@ -17,6 +17,9 @@ from typing import Optional
 CONFIG_DIR = Path.home() / ".alpiecode"
 CONFIG_PATH = CONFIG_DIR / "config.json"
 
+# Config version — bump this when defaults change to trigger auto-migration
+CONFIG_VERSION = 2  # v2: n_ctx upgraded 16384 → 32768
+
 DEFAULTS = {
     "base_url": "http://20.245.200.125:8000/v1",  # Remote VLM server endpoint
     "model": "169Pi/grpo_phase_2_merged",
@@ -29,6 +32,7 @@ DEFAULTS = {
     "enable_thinking": True,
     "n_ctx": 32768,  # 32k context window (model supports up to 131k)
     "n_gpu_layers": None,  # None = auto-detect GPU
+    "config_version": CONFIG_VERSION,
 }
 
 
@@ -75,11 +79,21 @@ class Config:
 
 def load_config() -> Config:
     data = dict(DEFAULTS)
+    needs_save = False
     if CONFIG_PATH.exists():
         try:
             saved_data = json.loads(CONFIG_PATH.read_text())
             # Skip null values so they don't override smart defaults (e.g. base_url)
             data.update({k: v for k, v in saved_data.items() if v is not None})
+
+            # ── Auto-migrate stale configs ────────────────────────────
+            saved_version = saved_data.get("config_version", 1)
+            if saved_version < CONFIG_VERSION:
+                # v1 → v2: n_ctx was 16384, upgrade to 32768
+                if saved_data.get("n_ctx") == 16384:
+                    data["n_ctx"] = 32768
+                data["config_version"] = CONFIG_VERSION
+                needs_save = True
         except Exception:
             pass
 
@@ -101,7 +115,16 @@ def load_config() -> Config:
     # Filter data to only keys present in Config fields
     valid_keys = {f.name for f in fields(Config)}
     filtered_data = {k: v for k, v in data.items() if k in valid_keys}
-    return Config(**filtered_data)
+    cfg = Config(**filtered_data)
+
+    # Auto-save migrated config
+    if needs_save:
+        try:
+            save_config(cfg)
+        except Exception:
+            pass
+
+    return cfg
 
 
 def save_config(cfg: Config) -> None:
