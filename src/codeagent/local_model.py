@@ -53,7 +53,9 @@ def detect_gpu() -> int:
     # ── 1. NVIDIA GPU (highest priority — most common dedicated GPU) ──
     nvidia_smi_candidates = [
         "nvidia-smi",
+        "nvidia-smi.exe",
         "/usr/lib/wsl/lib/nvidia-smi",
+        r"C:\Windows\System32\nvidia-smi.exe",
         r"C:\Program Files\NVIDIA Corporation\NVSMI\nvidia-smi.exe",
     ]
     for smi_bin in nvidia_smi_candidates:
@@ -67,6 +69,18 @@ def detect_gpu() -> int:
                 if vram_mb <= 6500:  # 6GB VRAM (e.g. RTX 3050 Laptop)
                     return 26  # Partial offload — keep 2GB VRAM free
                 return -1  # 8GB+ VRAM — offload all layers
+        except Exception:
+            pass
+
+    # Windows fallback: check via wmic or powershell for NVIDIA controllers
+    if platform.system() == "Windows":
+        try:
+            res = subprocess.run(
+                ["powershell", "-NoProfile", "-Command", "Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name"],
+                capture_output=True, text=True, timeout=3
+            )
+            if res.returncode == 0 and "NVIDIA" in res.stdout.upper():
+                return -1  # NVIDIA GPU found on Windows
         except Exception:
             pass
 
