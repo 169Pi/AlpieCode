@@ -301,16 +301,48 @@ def _print_assistant_message(content: str):
 
 # ── Git helpers ───────────────────────────────────────────────────────
 
+def _is_safe_git_dir(workdir: Path) -> bool:
+    """Check if directory is safe for git operations (not home dir, not root, not too large)."""
+    try:
+        home = Path.home().resolve()
+        wd = workdir.resolve()
+        # Never git-init the user's home directory or root
+        if wd == home or wd == Path("/") or wd == Path("C:\\"):
+            return False
+        # Skip directories with too many top-level items (likely not a project)
+        try:
+            items = list(wd.iterdir())
+            if len(items) > 500:
+                return False
+        except PermissionError:
+            return False
+    except Exception:
+        return False
+    return True
+
+
 def _ensure_git(workdir: Path) -> None:
+    if not _is_safe_git_dir(workdir):
+        return  # Skip git for home directories / huge directories
     if not (workdir / ".git").exists():
-        subprocess.run(["git", "init"], cwd=workdir, capture_output=True)
-        subprocess.run(["git", "add", "-A"], cwd=workdir, capture_output=True)
-        subprocess.run(["git", "commit", "-m", "initial commit", "--allow-empty"], cwd=workdir, capture_output=True)
+        try:
+            subprocess.run(["git", "init"], cwd=workdir, capture_output=True, timeout=10)
+            subprocess.run(["git", "add", "-A"], cwd=workdir, capture_output=True, timeout=30)
+            subprocess.run(["git", "commit", "-m", "initial commit", "--allow-empty"],
+                           cwd=workdir, capture_output=True, timeout=10)
+        except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
+            pass  # git not installed or timed out — not critical
 
 
 def _checkpoint(workdir: Path, message: str) -> None:
-    subprocess.run(["git", "add", "-A"], cwd=workdir, capture_output=True)
-    subprocess.run(["git", "commit", "-m", message, "--allow-empty"], cwd=workdir, capture_output=True)
+    if not (workdir / ".git").exists():
+        return  # No git repo — skip silently
+    try:
+        subprocess.run(["git", "add", "-A"], cwd=workdir, capture_output=True, timeout=30)
+        subprocess.run(["git", "commit", "-m", message, "--allow-empty"],
+                       cwd=workdir, capture_output=True, timeout=10)
+    except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
+        pass  # Not critical
 
 
 # ── Message serialization ────────────────────────────────────────────
