@@ -51,18 +51,24 @@ def detect_gpu() -> int:
     import platform
 
     # ── 1. NVIDIA GPU (highest priority — most common dedicated GPU) ──
-    try:
-        res = subprocess.run(
-            ["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits"],
-            capture_output=True, text=True, timeout=3
-        )
-        if res.returncode == 0 and res.stdout.strip():
-            vram_mb = int(res.stdout.strip().split("\n")[0])
-            if vram_mb <= 6500:  # 6GB VRAM (e.g. RTX 3050 Laptop)
-                return 26  # Partial offload — keep 2GB VRAM free
-            return -1  # 8GB+ VRAM — offload all layers
-    except Exception:
-        pass
+    nvidia_smi_candidates = [
+        "nvidia-smi",
+        "/usr/lib/wsl/lib/nvidia-smi",
+        r"C:\Program Files\NVIDIA Corporation\NVSMI\nvidia-smi.exe",
+    ]
+    for smi_bin in nvidia_smi_candidates:
+        try:
+            res = subprocess.run(
+                [smi_bin, "--query-gpu=memory.total", "--format=csv,noheader,nounits"],
+                capture_output=True, text=True, timeout=3
+            )
+            if res.returncode == 0 and res.stdout.strip():
+                vram_mb = int(res.stdout.strip().split("\n")[0].strip())
+                if vram_mb <= 6500:  # 6GB VRAM (e.g. RTX 3050 Laptop)
+                    return 26  # Partial offload — keep 2GB VRAM free
+                return -1  # 8GB+ VRAM — offload all layers
+        except Exception:
+            pass
 
     # ── 2. macOS Metal (Apple Silicon — unified memory, always fast) ──
     if platform.system() == "Darwin":
