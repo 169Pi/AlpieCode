@@ -266,7 +266,7 @@ def run_chat(workdir: Path, cfg: Config, verbose: bool = True) -> None:
     session_mgr = SessionManager()
     session = session_mgr.create_session(workdir, max_tokens=cfg.n_ctx if not backend.is_available else 262_144)
 
-    is_offline = not backend.is_available or isinstance(backend, type(resolve_backend(cfg)))
+    is_offline = isinstance(backend, LocalBackend) or not backend.is_available
     active_tools = PromptBuilder().get_tools(is_offline=is_offline)
 
     if HAS_RICH:
