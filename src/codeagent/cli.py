@@ -29,7 +29,7 @@ def _show_banner():
 
 
 def _normalize_args():
-    known_commands = {"init", "run", "chat", "plan", "diff", "-h", "--help", "--version"}
+    known_commands = {"init", "serve", "run", "chat", "plan", "diff", "-h", "--help", "--version"}
     subcommand = None
     
     # Check if a subcommand is present
@@ -88,6 +88,11 @@ def main():
     # ── init ──
     sub.add_parser("init", help="Configure your VLM/OpenAI-compatible endpoint")
 
+    # ── serve ──
+    serve_p = sub.add_parser("serve", help="Start the AlpieCode API server")
+    serve_p.add_argument("--host", default="127.0.0.1", help="Host address to bind to (default: 127.0.0.1)")
+    serve_p.add_argument("--port", type=int, default=7169, help="Port to listen on (default: 7169)")
+
     # ── run ──
     run_p = sub.add_parser("run", help="Run a coding task against a repository", parents=[common])
     run_p.add_argument("task", help="Natural-language task description")
@@ -110,6 +115,12 @@ def main():
 
     if args.command == "init":
         interactive_init()
+        return
+
+    if args.command == "serve":
+        _show_banner()
+        from .server import run_server
+        run_server(host=args.host, port=args.port)
         return
 
     # Check for auto-updates from GitHub in background
