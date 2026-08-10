@@ -149,28 +149,50 @@ def run_agent(
     video_path: str = None,
     url: str = None,
     github_repo: str = None,
+    server_url: str = None,
 ) -> list:
     """Run non-interactive agent task with Rich presentation."""
     workdir = workdir.resolve()
     _ensure_git(workdir)
 
-    backend = resolve_backend(cfg)
-    orchestrator = AgentOrchestrator(backend)
-    session_mgr = SessionManager()
-    session = session_mgr.create_session(workdir, max_tokens=cfg.n_ctx if not backend.is_available else 262_144)
+    # CLI-as-Client check: auto-detect if local/remote server is running
+    from .client import AlpieCodeClient
+    target_server = server_url or getattr(cfg, "server_url", None)
+    if not target_server:
+        # Check default local server
+        local_client = AlpieCodeClient("http://127.0.0.1:7169")
+        if local_client.health().get("status") == "online":
+            target_server = "http://127.0.0.1:7169"
+
+    if target_server:
+        client = AlpieCodeClient(target_server)
+        event_stream = client.stream_chat(
+            task=task,
+            workdir=str(workdir),
+            image_path=image_path,
+            video_path=video_path,
+            url=url,
+            github_repo=github_repo,
+        )
+    else:
+        backend = resolve_backend(cfg)
+        orchestrator = AgentOrchestrator(backend)
+        session_mgr = SessionManager()
+        session = session_mgr.create_session(workdir, max_tokens=cfg.n_ctx if not backend.is_available else 262_144)
+        event_stream = orchestrator.run_task(
+            session=session,
+            task=task,
+            cfg=cfg,
+            image_path=image_path,
+            video_path=video_path,
+            url=url,
+            github_repo=github_repo,
+        )
 
     _checkpoint(workdir, "checkpoint: start")
 
     current_turn = 0
-    for event in orchestrator.run_task(
-        session=session,
-        task=task,
-        cfg=cfg,
-        image_path=image_path,
-        video_path=video_path,
-        url=url,
-        github_repo=github_repo,
-    ):
+    for event in event_stream:
         if event.type == "start" and verbose:
             data = event.data
             if HAS_RICH:
@@ -254,7 +276,7 @@ def run_agent(
         elif event.type == "max_turns_reached" and verbose:
             console.print(f"\n⚠️  Max turns ({event.data['max_turns']}) reached without completion.", style="bold yellow")
 
-    return session.context.messages
+    return session.context.messages if "session" in locals() else []
 
 
 def run_chat(workdir: Path, cfg: Config, verbose: bool = True) -> None:
