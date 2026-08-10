@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional
 from .config import Config, is_server_reachable
 from .context import ContextManager, _serialize_assistant_message
 from .executor import READ_ONLY_TOOLS, ToolExecutor, parse_text_tool_calls as _parse_text_tool_calls
+from .backends.local_backend import LocalBackend
 from .orchestrator import AgentEvent, AgentOrchestrator, resolve_backend
 from .prompt import (
     OFFLINE_SYSTEM_PROMPT,
