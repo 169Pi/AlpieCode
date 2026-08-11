@@ -13,6 +13,7 @@ from typing import Any, Dict, Optional
 
 try:
     from fastapi import FastAPI, HTTPException, Request, Response
+    from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import JSONResponse, StreamingResponse
     HAS_FASTAPI = True
 except ImportError:
@@ -51,6 +52,15 @@ if HAS_FASTAPI:
         description="Scalable backend API powering AlpieCode CLI and IDE plugins",
         version="0.7.2",
         lifespan=lifespan,
+    )
+
+    # CORS — allow VS Code extensions, web UIs, and external clients
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
 
     @app.get("/health")

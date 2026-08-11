@@ -1,0 +1,77 @@
+{
+  "name": "alpiecode",
+  "displayName": "AlpieCode",
+  "description": "AI coding agent powered by 169Pi — chat, fix bugs, generate tests, refactor code",
+  "version": "0.3.0",
+  "publisher": "169pi",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["AI", "Chat", "Programming Languages"],
+  "icon": "media/icon.png",
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "alpiecode-sidebar",
+          "title": "AlpieCode",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "alpiecode-sidebar": [
+        {
+          "type": "webview",
+          "id": "alpiecode.chatView",
+          "name": "Chat"
+        }
+      ]
+    },
+    "commands": [
+      { "command": "alpiecode.fixError", "title": "AlpieCode: Fix This Error" },
+      { "command": "alpiecode.generateTests", "title": "AlpieCode: Generate Tests" },
+      { "command": "alpiecode.explainCode", "title": "AlpieCode: Explain Code" },
+      { "command": "alpiecode.refactorCode", "title": "AlpieCode: Refactor / Optimize" },
+      { "command": "alpiecode.askAboutCode", "title": "AlpieCode: Ask About Selection" }
+    ],
+    "menus": {
+      "editor/context": [
+        { "command": "alpiecode.fixError", "group": "alpiecode@1" },
+        { "command": "alpiecode.generateTests", "group": "alpiecode@2" },
+        { "command": "alpiecode.explainCode", "group": "alpiecode@3" },
+        { "command": "alpiecode.refactorCode", "group": "alpiecode@4" },
+        { "command": "alpiecode.askAboutCode", "group": "alpiecode@5" }
+      ]
+    },
+    "configuration": {
+      "title": "AlpieCode",
+      "properties": {
+        "alpiecode.serverUrl": {
+          "type": "string",
+          "default": "http://127.0.0.1:7169",
+          "description": "AlpieCode backend server URL"
+        },
+        "alpiecode.enableThinking": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show reasoning/thinking traces in chat"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.3.0",
+    "@vscode/vsce": "^2.22.0"
+  }
+}

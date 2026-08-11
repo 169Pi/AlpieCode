@@ -119,6 +119,11 @@ def main():
 
     if args.command == "serve":
         _show_banner()
+        try:
+            from .vscode_installer import ensure_vscode_extension
+            ensure_vscode_extension()
+        except Exception as e:
+            pass
         from .server import run_server
         run_server(host=args.host, port=args.port)
         return

@@ -28,9 +28,13 @@ class AgentEvent:
     data: Dict[str, Any]
 
 
-def resolve_backend(cfg: Config) -> InferenceBackend:
-    """Resolve online vs offline backend based on server reachability."""
-    if is_server_reachable(cfg.base_url):
+def resolve_backend(cfg: Config, timeout: float = 2.0) -> InferenceBackend:
+    """Resolve online vs offline backend based on server reachability.
+
+    Uses a generous timeout at startup (2s default) to avoid false negatives
+    when the remote API is slow to respond (e.g. Azure VM cold start).
+    """
+    if is_server_reachable(cfg.base_url, timeout=timeout):
         return OpenAIBackend(cfg)
     return LocalBackend(cfg)
 
@@ -59,6 +63,13 @@ class AgentOrchestrator:
         """
         Run full agent task loop for a session. Yields AgentEvents.
         """
+        # Dynamic backend re-check: if currently on LocalBackend but remote
+        # API is now reachable, switch to OnlineBackend automatically.
+        # This handles the case where the server started offline but the
+        # remote API came online later (e.g. VM cold start, network hiccup).
+        if isinstance(self.backend, LocalBackend) and is_server_reachable(cfg.base_url, timeout=1.5):
+            self.backend = OpenAIBackend(cfg)
+
         is_offline = not self.backend.is_available or isinstance(self.backend, LocalBackend)
         session.is_offline = is_offline
 

@@ -25,3 +25,9 @@ Thumbs.db
 
 # Config (user-specific)
 .codeagent/
+
+# VS Code extension build artifacts
+vscode/node_modules/
+vscode/out/
+*.vsix
+
