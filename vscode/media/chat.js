@@ -157,6 +157,10 @@
         // Silently consume these — no visual noise
         break;
 
+      case "cache_hit":
+        appendCacheHit();
+        break;
+
       case "thinking":
         appendThinking(event.data.content || event.data.text || "");
         break;
@@ -188,6 +192,14 @@
         // Silently ignore unknown events
         break;
     }
+  }
+
+  function appendCacheHit() {
+    const el = document.createElement("div");
+    el.style.cssText = "font-size:11px;opacity:0.6;padding:3px 8px;color:#4ade80;";
+    el.textContent = "⚡ Cached response (instant)";
+    messagesEl.appendChild(el);
+    scrollToBottom();
   }
 
   function appendThinking(text) {

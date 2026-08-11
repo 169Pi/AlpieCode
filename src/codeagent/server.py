@@ -69,12 +69,21 @@ if HAS_FASTAPI:
         backend_name = app.state.backend.name if hasattr(app.state, "backend") else "unknown"
         is_avail = app.state.backend.is_available if hasattr(app.state, "backend") else False
         uptime = time.time() - app.state.start_time if hasattr(app.state, "start_time") else 0.0
+
+        # Cache stats
+        try:
+            from .cache import get_cache
+            cache_stats = get_cache().stats
+        except Exception:
+            cache_stats = {}
+
         return {
             "status": "online",
             "backend": backend_name,
             "available": is_avail,
             "uptime_seconds": round(uptime, 2),
-            "version": "0.7.2",
+            "version": "0.9.2",
+            "cache": cache_stats,
         }
 
     @app.get("/sessions")

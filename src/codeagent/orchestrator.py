@@ -13,6 +13,7 @@ from typing import Any, Dict, Iterator, Optional
 from .backends.base import ChatResponse, InferenceBackend, ToolCall
 from .backends.local_backend import LocalBackend
 from .backends.openai_backend import OpenAIBackend
+from .cache import get_cache
 from .config import Config, is_server_reachable
 from .context import ContextManager
 from .executor import ToolExecutor, ToolResult
@@ -63,6 +64,29 @@ class AgentOrchestrator:
         """
         Run full agent task loop for a session. Yields AgentEvents.
         """
+        # ── Response cache check (instant return for repeated prompts) ──
+        # Only cache pure text prompts (no images, videos, URLs, or GitHub repos)
+        is_cacheable = not any([image_path, video_path, url, github_repo])
+        if is_cacheable:
+            cache = get_cache()
+            cached = cache.get(task)
+            if cached:
+                yield AgentEvent("start", {
+                    "task": task,
+                    "workdir": str(session.workdir),
+                    "backend": "cache",
+                    "is_offline": False,
+                    "tool_count": 0,
+                })
+                yield AgentEvent("cache_hit", {
+                    "message": "Returning cached response (instant)",
+                })
+                if cached.get("reasoning"):
+                    yield AgentEvent("thinking", {"content": cached["reasoning"]})
+                yield AgentEvent("message", {"content": cached["response"]})
+                yield AgentEvent("done", {"summary": cached["response"]})
+                return
+
         # Dynamic backend re-check: if currently on LocalBackend but remote
         # API is now reachable, switch to OnlineBackend automatically.
         # This handles the case where the server started offline but the
@@ -176,8 +200,16 @@ class AgentOrchestrator:
 
                 continue
 
-            # Assistant text response
+            # Assistant text response (no tool calls = cacheable)
             if resp.content:
+                # Cache this response — it completed in a single turn without tools
+                if is_cacheable and turn == 0:
+                    try:
+                        cache = get_cache()
+                        cache.put(task, resp.content, reasoning=resp.reasoning)
+                    except Exception:
+                        pass
+
                 yield AgentEvent("message", {"content": resp.content})
                 extract_and_save_memories(session.workdir, session.context.messages)
                 yield AgentEvent("done", {"summary": resp.content})
