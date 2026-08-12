@@ -138,7 +138,11 @@ class AgentOrchestrator:
             yield AgentEvent("turn_start", {"turn": turn + 1})
 
             try:
-                max_tokens = 2048 if is_offline else cfg.max_tokens
+                if enable_thinking:
+                    max_tokens = 4096 if is_offline else max(cfg.max_tokens, 16384)
+                else:
+                    max_tokens = 2048 if is_offline else cfg.max_tokens
+
                 resp = self.backend.chat_completion(
                     messages=session.context.messages,
                     tools=active_tools,

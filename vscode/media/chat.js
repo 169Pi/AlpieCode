@@ -202,30 +202,37 @@
     scrollToBottom();
   }
 
+  let currentThinkingEl = null;
+
   function appendThinking(text) {
     if (!text) return;
     finalizeAssistantMessage();
 
-    const block = document.createElement("div");
-    block.className = "thinking-block";
-    block.style.display = showThinking ? "" : "none";
+    if (!currentThinkingEl) {
+      const block = document.createElement("div");
+      block.className = "thinking-block";
+      block.style.display = showThinking ? "" : "none";
 
-    const header = document.createElement("div");
-    header.className = "thinking-header";
-    header.innerHTML = '<span class="chevron">▼</span> 💭 Thinking...';
+      const header = document.createElement("div");
+      header.className = "thinking-header";
+      header.innerHTML = '<span class="chevron">▼</span> 💭 Thinking...';
 
-    const content = document.createElement("div");
-    content.className = "thinking-content";
-    content.textContent = text;
+      const content = document.createElement("div");
+      content.className = "thinking-content";
+      content.textContent = text;
 
-    header.addEventListener("click", () => {
-      header.classList.toggle("collapsed");
-      content.classList.toggle("collapsed");
-    });
+      header.addEventListener("click", () => {
+        header.classList.toggle("collapsed");
+        content.classList.toggle("collapsed");
+      });
 
-    block.appendChild(header);
-    block.appendChild(content);
-    messagesEl.appendChild(block);
+      block.appendChild(header);
+      block.appendChild(content);
+      messagesEl.appendChild(block);
+      currentThinkingEl = content;
+    } else {
+      currentThinkingEl.textContent += (currentThinkingEl.textContent ? "\n" : "") + text;
+    }
     scrollToBottom();
   }
 
@@ -274,6 +281,7 @@
   }
 
   function appendAssistantToken(text) {
+    currentThinkingEl = null;
     if (!currentAssistantEl) {
       currentAssistantEl = document.createElement("div");
       currentAssistantEl.className = "msg assistant";
