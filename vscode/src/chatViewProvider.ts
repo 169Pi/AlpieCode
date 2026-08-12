@@ -7,7 +7,10 @@
 
 import * as vscode from "vscode";
 import * as os from "os";
+import * as path from "path";
+import * as fs from "fs";
 import { streamChat, checkHealth, AgentEvent } from "./sseClient";
+import { showDiffPreview } from "./diffHelper";
 
 /* ------------------------------------------------------------------ */
 /*  Data models                                                       */
@@ -117,6 +120,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         if (ev.type === "message" || ev.type === "token") {
           assistantBuf += ev.data.content || ev.data.text || "";
         }
+        if (ev.type === "tool_call") {
+          this._handleToolCallDiff(workdir, ev.data);
+        }
         this._post({ action: "agentEvent", event: ev });
       },
       (err) => {
@@ -138,6 +144,30 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
   private _abort() {
     if (this._abortStream) { this._abortStream(); this._abortStream = undefined; }
+  }
+
+  private async _handleToolCallDiff(workdir: string, data: any) {
+    const name = data.name;
+    let args = data.arguments;
+    if (typeof args === "string") {
+      try { args = JSON.parse(args); } catch { args = {}; }
+    }
+    if (!args || !args.path) { return; }
+
+    const relPath = args.path;
+
+    if (name === "write_file") {
+      const content = args.content || "";
+      await showDiffPreview(workdir, relPath, content, "write_file");
+    } else if (name === "edit_file") {
+      const absPath = path.isAbsolute(relPath) ? relPath : path.join(workdir, relPath);
+      let existing = "";
+      try { existing = fs.readFileSync(absPath, "utf-8"); } catch {}
+      const oldStr = args.old_str || "";
+      const newStr = args.new_str || "";
+      const newContent = oldStr ? existing.replace(oldStr, newStr) : newStr;
+      await showDiffPreview(workdir, relPath, newContent, "edit_file");
+    }
   }
 
   /* ---- Message handler ---- */

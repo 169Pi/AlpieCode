@@ -2,8 +2,8 @@
  * Diff preview helper for AlpieCode file operations.
  *
  * When the agent emits write_file or edit_file tool calls,
- * this module shows a VS Code diff view so the user can
- * review changes before accepting them.
+ * this module shows a native VS Code diff view side-by-side so the user can
+ * review changes and Accept or Reject them.
  */
 
 import * as vscode from "vscode";
@@ -11,7 +11,7 @@ import * as path from "path";
 import * as fs from "fs";
 
 /**
- * Show a diff preview for a file write/edit operation.
+ * Show a native side-by-side diff preview for a file write/edit operation with Accept/Reject buttons.
  *
  * @param workdir - The workspace root directory
  * @param filePath - Relative path to the file being modified
@@ -32,16 +32,18 @@ export async function showDiffPreview(
   const fileName = path.basename(filePath);
 
   // Read existing content (empty if new file)
+  let fileExists = false;
   let existingContent = "";
   try {
     existingContent = fs.readFileSync(absPath, "utf-8");
+    fileExists = true;
   } catch {
-    // File doesn't exist yet — this is a new file creation
+    // File doesn't exist yet — new file creation
   }
 
   // Create virtual documents for diff
-  const originalScheme = "alpiecode-original";
-  const modifiedScheme = "alpiecode-modified";
+  const originalScheme = `alpiecode-original-${Date.now()}`;
+  const modifiedScheme = `alpiecode-modified-${Date.now()}`;
 
   const originalUri = vscode.Uri.parse(
     `${originalScheme}:${fileName}?${encodeURIComponent(existingContent)}`
@@ -71,37 +73,52 @@ export async function showDiffPreview(
 
   const label =
     toolName === "write_file"
-      ? `✨ ${fileName} (AlpieCode: Create/Overwrite)`
-      : `✏️ ${fileName} (AlpieCode: Edit)`;
+      ? `✨ ${fileName} (AlpieCode: Proposed File Creation)`
+      : `✏️ ${fileName} (AlpieCode: Proposed Edit)`;
 
-  // Show diff view
-  await vscode.commands.executeCommand("vscode.diff", originalUri, modifiedUri, label);
+  // Show native side-by-side diff view
+  try {
+    await vscode.commands.executeCommand("vscode.diff", originalUri, modifiedUri, label);
+  } catch (err) {
+    console.error("Failed to open VS Code diff editor:", err);
+  }
 
-  // Show accept/reject dialog
+  // Show Accept/Reject notification popup
+  const actionText = fileExists ? "edit" : "create";
   const choice = await vscode.window.showInformationMessage(
-    `AlpieCode wants to ${toolName === "write_file" ? "write" : "edit"} ${filePath}`,
+    `AlpieCode wants to ${actionText} '${filePath}'. Accept proposed changes?`,
     { modal: false },
     "✅ Accept",
     "❌ Reject"
   );
 
   if (choice === "✅ Accept") {
-    // Ensure directory exists
+    // Ensure parent directory exists
     const dir = path.dirname(absPath);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
     fs.writeFileSync(absPath, newContent, "utf-8");
-    vscode.window.showInformationMessage(`✅ Applied changes to ${filePath}`);
+    vscode.window.showInformationMessage(`✅ Accepted & applied changes to '${filePath}'`);
 
-    // Open the file after applying
-    const doc = await vscode.workspace.openTextDocument(fileUri);
-    await vscode.window.showTextDocument(doc);
+    // Open the target file in active editor
+    try {
+      const doc = await vscode.workspace.openTextDocument(fileUri);
+      await vscode.window.showTextDocument(doc);
+    } catch {
+      // ignore
+    }
   } else {
-    vscode.window.showInformationMessage(`❌ Rejected changes to ${filePath}`);
+    // Revert changes on Reject
+    if (fileExists) {
+      fs.writeFileSync(absPath, existingContent, "utf-8");
+    } else if (fs.existsSync(absPath)) {
+      try { fs.unlinkSync(absPath); } catch {}
+    }
+    vscode.window.showInformationMessage(`❌ Rejected changes to '${filePath}'`);
   }
 
-  // Cleanup providers
+  // Cleanup virtual document providers
   originalProvider.dispose();
   modifiedProvider.dispose();
 }
