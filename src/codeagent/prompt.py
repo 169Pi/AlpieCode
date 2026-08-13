@@ -135,6 +135,61 @@ Before the first edit, write down:
   ("the test suite passes with 0 failures", not "validate the output")
 Use the update_plan tool to record this.
 
+## Complex Project Workflow (Multi-File Projects)
+When building a game, website, full-stack app, or any multi-file project:
+
+### Step 1: Architecture Plan (MANDATORY)
+Before writing ANY code, use update_plan to document:
+- ALL files that need to be created (with their purposes)
+- Dependencies between files (what imports what, what links with what)
+- The exact build/run command
+- Data structures and state management approach
+- How you will verify each component works
+
+### Step 2: Build Foundation First
+- Create the project skeleton (directory structure, config files, Makefile)
+- Write shared utilities / data structures / header files FIRST
+- Then write the main entry point / core module
+- Then write secondary modules and UI components
+- For games: implement game state → physics → rendering → input → game loop (in that order)
+- For websites: implement HTML structure → CSS styling → JS interactivity (in that order)
+- For APIs: implement models → routes → middleware → tests (in that order)
+
+### Step 3: Incremental Verification
+After writing EACH file:
+- For C/C++: compile immediately with `g++ -Wall -Wextra -std=c++17 -c file.cpp` to catch errors early
+- For Python: run `python -c "import module_name"` to verify syntax and imports
+- For web: verify HTML is well-formed, CSS selectors exist, JS has no syntax errors
+- Fix ALL errors in the current file before moving to the next file
+
+### Step 4: Integration Build & Test
+After all files are written:
+- Build/compile the complete project end-to-end
+- Run the primary user flow / test suite
+- Fix any linker errors, import errors, or integration issues
+- For games: verify all game elements render (player, enemies, score, boundaries)
+
+### Step 5: Polish & Deliver
+- Read back key functions to verify logical correctness
+- Ensure ALL features mentioned in the user's request are implemented
+- Tell the user exactly how to build and run the project
+
+## Writing Complete, Working Code — CRITICAL
+When creating a file, you MUST:
+1. Think through the ENTIRE implementation BEFORE calling write_file
+2. Include ALL necessary imports / includes / headers at the top
+3. Implement EVERY function completely — no stubs, no TODOs, no "implement later"
+4. Handle edge cases and error conditions properly
+5. For games: implement ALL game mechanics — physics, collision, scoring, rendering, \
+   input handling, game over, restart. A game with missing mechanics is broken.
+6. For websites: include ALL routes, complete HTML pages, CSS styling, JS interactivity, \
+   and error pages. A website with missing pages is broken.
+7. For APIs: implement ALL endpoints with proper request validation, error handling, \
+   and response formatting. An API with missing endpoints is broken.
+
+NEVER write partial code and say "I'll add the rest later" — write it ALL in one go. \
+The user expects a COMPLETE, WORKING program on the first delivery.
+
 ## Working with files
 - Always read_file before editing — never edit a file you haven't read
 - Use edit_file for targeted changes (preferred), write_file only for new files
@@ -328,17 +383,39 @@ Rules:
 
 
 def is_simple_task(task: str) -> bool:
-    """Detect simple tasks that don't benefit from deep reasoning traces."""
+    """Detect simple tasks that don't benefit from deep reasoning traces.
+
+    IMPORTANT: Complex project requests (games, websites, APIs, full-stack apps)
+    must ALWAYS get thinking mode enabled, regardless of prompt length.
+    """
     task_lower = task.lower().strip()
-    if len(task_lower) < 80:
-        return True
-    simple_patterns = [
-        "fix typo", "add comment", "rename", "format", "add docstring",
-        "remove unused", "add import", "update version", "change color",
-        "fix indent", "add logging", "hello world", "fibonacci",
-        "print ", "add a test", "calculator",
+
+    # Complex task keywords — ALWAYS need thinking regardless of length
+    complex_patterns = [
+        "build", "create", "implement", "develop", "design", "make",
+        "game", "website", "webapp", "web app", "full stack", "fullstack",
+        "api", "server", "database", "authentication", "deploy",
+        "refactor", "migrate", "architecture", "system",
+        "flappy", "snake", "tetris", "chess", "pong", "sudoku",
+        "todo app", "portfolio", "dashboard", "e-commerce", "ecommerce",
+        "crud", "rest api", "graphql", "microservice",
+        "project", "application", "framework", "library", "package",
+        "html", "css", "react", "flask", "django", "fastapi", "express",
+        "multi-file", "multifile", "full", "complete",
     ]
-    return any(pat in task_lower for pat in simple_patterns)
+    if any(pat in task_lower for pat in complex_patterns):
+        return False  # Complex task — needs deep thinking
+
+    # Only treat as simple if short AND matches trivial edit patterns
+    if len(task_lower) < 50:
+        simple_patterns = [
+            "fix typo", "add comment", "rename", "format", "add docstring",
+            "remove unused", "add import", "update version", "change color",
+            "fix indent", "add logging", "hello world",
+        ]
+        return any(pat in task_lower for pat in simple_patterns)
+
+    return False
 
 
 class PromptBuilder:

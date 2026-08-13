@@ -20,7 +20,7 @@ MAX_CONTEXT_TOKENS = 262_144
 # Start compacting when we hit this percentage of the context window
 COMPACT_THRESHOLD = 0.70
 # Number of recent turns to always keep intact
-KEEP_RECENT_TURNS = 10
+KEEP_RECENT_TURNS = 20
 # Approximate chars per token (rough heuristic)
 CHARS_PER_TOKEN = 4
 
@@ -52,6 +52,10 @@ def needs_compaction(messages: List[dict], max_tokens: int = MAX_CONTEXT_TOKENS)
 
 def _summarize_tool_result(tool_name: str, content: str) -> str:
     """Create a compact summary of a tool result."""
+    # NEVER truncate the execution plan — it's critical architectural context
+    if tool_name == "update_plan":
+        return content
+
     if len(content) <= 300:
         return content
 

@@ -104,26 +104,52 @@ def extract_and_save_memories(workdir: Path, messages: list) -> None:
     After a session ends, extract key learnings from the conversation
     and save them as memories.
 
-    This scans tool results for commonly useful information like:
+    Scans tool results for commonly useful information like:
+    - Successful build/test commands
     - Project structure (from list_files results)
-    - Test commands (from bash results running tests)
-    - Build commands (from bash results running builds)
+    - Completion summaries
     """
-    for msg in messages:
+    saved_cmds = set()  # Avoid duplicate command memories
+
+    for idx, msg in enumerate(messages):
         if not isinstance(msg, dict):
             continue
 
-        # Look for tool results
+        # ── Save successful build/test commands ──
         if msg.get("role") == "tool":
             content = msg.get("content", "")
+            if '"exit_code": 0' in content:
+                # Walk backwards to find the bash tool_call that produced this result
+                tool_call_id = msg.get("tool_call_id", "")
+                for prev in reversed(messages[:idx]):
+                    if prev.get("role") == "assistant" and prev.get("tool_calls"):
+                        for tc in prev["tool_calls"]:
+                            tc_dict = tc if isinstance(tc, dict) else {}
+                            if tc_dict.get("id") == tool_call_id:
+                                fn = tc_dict.get("function", {})
+                                if fn.get("name") == "bash":
+                                    try:
+                                        args = fn.get("arguments", "{}")
+                                        if isinstance(args, str):
+                                            args = json.loads(args)
+                                        cmd = args.get("command", "")
+                                    except (json.JSONDecodeError, AttributeError):
+                                        cmd = ""
+                                    if cmd and cmd not in saved_cmds:
+                                        if any(kw in cmd for kw in ["pytest", "test", "unittest", "npm run test", "cargo test", "go test"]):
+                                            save_memory(workdir, f"Working test command: {cmd}", "command")
+                                            saved_cmds.add(cmd)
+                                        elif any(kw in cmd for kw in ["build", "compile", "g++", "gcc", "make", "cargo build", "npm run build"]):
+                                            save_memory(workdir, f"Working build command: {cmd}", "command")
+                                            saved_cmds.add(cmd)
+                        break
 
-            # Detect test commands that succeeded
-            if '"exit_code": 0' in content and any(kw in content.lower() for kw in
-                    ["pytest", "test", "passed", "ok", "success"]):
-                # Find the corresponding tool call to get the command
-                pass  # Would need more context to extract command
+            # ── Save project structure from list_files / tree output ──
+            if "├" in content or "└" in content:
+                if len(content) < 2000:
+                    save_memory(workdir, f"Project structure:\n{content[:500]}", "structure")
 
-        # Look for assistant messages with DONE
+        # ── Save completion summaries ──
         if msg.get("role") == "assistant" and msg.get("content"):
             content = msg["content"]
             if content.strip().startswith("DONE"):

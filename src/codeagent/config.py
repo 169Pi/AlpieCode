@@ -26,9 +26,9 @@ DEFAULTS = {
     "model_repo": "169Pi/Alpie_learn_prototype_GGUF_NEW",
     "api_key": "not-needed",
     "hf_token": None,
-    "max_turns": 30,
+    "max_turns": 50,
     "temperature": 0.2,
-    "max_tokens": 16384,
+    "max_tokens": 32768,
     "enable_thinking": True,
     "n_ctx": 32768,  # 32k context window (model supports up to 131k)
     "n_gpu_layers": None,  # None = auto-detect GPU
@@ -88,9 +88,9 @@ class Config:
     model_repo: str = "169Pi/Alpie_learn_prototype_GGUF_NEW"  # HuggingFace repo for offline GGUF
     api_key: str = "not-needed"
     hf_token: Optional[str] = None
-    max_turns: int = 30
+    max_turns: int = 50
     temperature: float = 0.2
-    max_tokens: int = 16384
+    max_tokens: int = 32768
     enable_thinking: bool = True
     n_ctx: int = 32768
     n_gpu_layers: Optional[int] = None
