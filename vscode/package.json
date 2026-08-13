@@ -59,6 +59,11 @@
           "type": "boolean",
           "default": true,
           "description": "Show reasoning/thinking traces in chat"
+        },
+        "alpiecode.enableAutocomplete": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable inline code autocomplete suggestions (ghost text). Press Tab to accept."
         }
       }
     }

@@ -177,6 +177,83 @@ if HAS_FASTAPI:
             },
         )
 
+    @app.post("/completion")
+    async def completion_endpoint(request: Request):
+        """
+        Lightweight code completion for inline autocomplete.
+
+        Expects JSON: { prefix, suffix, language, file_path, max_tokens? }
+        Returns JSON: { completion }
+        """
+        try:
+            body = await request.json()
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+        prefix = body.get("prefix", "")
+        suffix = body.get("suffix", "")
+        language = body.get("language", "")
+        file_path = body.get("file_path", "")
+        max_tokens = min(body.get("max_tokens", 128), 256)
+
+        if not prefix.strip():
+            return JSONResponse({"completion": ""})
+
+        # Build FIM prompt for code completion
+        fim_prompt = _build_fim_prompt(prefix, suffix, language, file_path)
+
+        import asyncio
+
+        def run_completion():
+            backend = app.state.backend
+            try:
+                resp = backend.chat_completion(
+                    messages=[
+                        {"role": "system", "content": "You are a code completion engine. Output ONLY the code that goes between the prefix and suffix. No explanations, no markdown, no backticks. Just raw code."},
+                        {"role": "user", "content": fim_prompt},
+                    ],
+                    tools=None,
+                    temperature=0.0,
+                    max_tokens=max_tokens,
+                    enable_thinking=False,
+                )
+                completion = resp.content or ""
+                # Clean up: remove markdown fences if the model wraps output
+                completion = _clean_completion(completion)
+                return completion
+            except Exception as e:
+                return ""
+
+        completion = await asyncio.to_thread(run_completion)
+        return JSONResponse({"completion": completion})
+
+    def _build_fim_prompt(prefix: str, suffix: str, language: str, file_path: str) -> str:
+        """Build a Fill-In-Middle prompt for code completion."""
+        lang_hint = f" ({language})" if language else ""
+        file_hint = f"\nFile: {file_path}" if file_path else ""
+
+        prompt = f"Complete the code{lang_hint}.{file_hint}\n\n"
+        prompt += f"Code before cursor:\n```\n{prefix[-2000:]}\n```\n\n"
+        if suffix.strip():
+            prompt += f"Code after cursor:\n```\n{suffix[:500]}\n```\n\n"
+        prompt += "Write ONLY the missing code that should appear at the cursor position. Output raw code only, no markdown."
+        return prompt
+
+    def _clean_completion(text: str) -> str:
+        """Strip markdown fences and leading/trailing whitespace artifacts."""
+        text = text.strip()
+        # Remove ```language\n...\n``` wrappers
+        if text.startswith("```"):
+            lines = text.split("\n")
+            # Remove first line (```lang) and last line (```)
+            if len(lines) >= 3 and lines[-1].strip() == "```":
+                text = "\n".join(lines[1:-1])
+            elif len(lines) >= 2:
+                text = "\n".join(lines[1:])
+        if text.endswith("```"):
+            text = text[:-3].rstrip()
+        return text
+
     @app.get("/metrics")
     async def get_metrics():
         """Observability metrics."""

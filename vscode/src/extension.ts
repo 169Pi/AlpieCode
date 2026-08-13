@@ -8,6 +8,7 @@
 import * as vscode from "vscode";
 import { ChatViewProvider } from "./chatViewProvider";
 import { registerCodeActions } from "./codeActions";
+import { AlpieCompletionProvider } from "./completionProvider";
 
 export function activate(context: vscode.ExtensionContext) {
   console.log("AlpieCode extension activating...");
@@ -36,6 +37,15 @@ export function activate(context: vscode.ExtensionContext) {
   statusBarItem.command = "alpiecode.chatView.focus";
   statusBarItem.show();
   context.subscriptions.push(statusBarItem);
+
+  // Register inline code completion provider (ghost-text autocomplete)
+  const completionProvider = new AlpieCompletionProvider();
+  context.subscriptions.push(
+    vscode.languages.registerInlineCompletionItemProvider(
+      { pattern: "**" },
+      completionProvider
+    )
+  );
 
   console.log("AlpieCode extension activated ✅");
 }
