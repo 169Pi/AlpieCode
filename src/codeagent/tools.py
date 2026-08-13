@@ -334,6 +334,24 @@ def _smart_truncate(text: str, max_chars: int = 6000) -> str:
     )
 
 
+
+def _extract_script_path(command: str) -> str:
+    """Extract the script file path from a bash command, if any."""
+    import re as _re
+    patterns = [
+        r"python3?\s+(?:-[a-zA-Z]+\s+)*([^\s|>&;]+\.py)",
+        r"node\s+([^\s|>&;]+\.js)",
+        r"ruby\s+([^\s|>&;]+\.rb)",
+        r"\./([^\s|>&;]+)",
+        r"bash\s+([^\s|>&;]+\.sh)",
+    ]
+    for pat in patterns:
+        m = _re.search(pat, command)
+        if m:
+            return m.group(1)
+    return ""
+
+
 def _bash(workdir: Path, command: str) -> str:
     """Run a shell command with guardian safety gate.
 
@@ -391,13 +409,33 @@ def _bash(workdir: Path, command: str) -> str:
             "exit_code": result.returncode,
         })
 
-        # Inject clear error signal for failed commands
+        # ── Smart Guardrail 1: Failed command — inject actionable hints ──
         if result.returncode != 0:
-            output = (
+            script_file = _extract_script_path(command)
+            hint = (
                 f"⚠️ COMMAND FAILED (exit_code={result.returncode}). "
                 f"Read the error output carefully and fix the ROOT CAUSE.\n"
-                + output
             )
+            if script_file:
+                hint += (
+                    f"💡 HINT: Use read_file to examine \'{script_file}\' around the "
+                    f"failing line before making edits. Do NOT guess — read first.\n"
+                )
+            output = hint + output
+
+        # ── Smart Guardrail 2: Silent success — script ran but no output ──
+        elif result.returncode == 0 and not stdout.strip() and not stderr.strip():
+            script_file = _extract_script_path(command)
+            if script_file:
+                output += (
+                    "\n\n⚠️ WARNING: Command succeeded (exit_code=0) but produced "
+                    "NO OUTPUT. This usually means:\n"
+                    "  1. The main execution block (if __name__ == \'__main__\') is missing or broken\n"
+                    "  2. An exception is being silently caught with a bare \'except: pass\'\n"
+                    "  3. The print/output statements were accidentally removed\n"
+                    f"→ Use read_file to check \'{script_file}\' — especially the main block "
+                    "at the bottom of the file. Do NOT re-run the same command."
+                )
 
         return output
     except subprocess.TimeoutExpired:
