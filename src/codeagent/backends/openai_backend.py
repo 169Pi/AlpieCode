@@ -63,14 +63,22 @@ class OpenAIBackend:
         tool_calls = None
         if msg.tool_calls:
             import json
-            tool_calls = [
-                ToolCall(
-                    id=tc.id,
-                    name=tc.function.name,
-                    arguments=json.loads(tc.function.arguments or "{}"),
+            tool_calls = []
+            for tc in msg.tool_calls:
+                try:
+                    args = json.loads(tc.function.arguments or "{}")
+                except (json.JSONDecodeError, TypeError):
+                    args = {}
+                # Defensive: ensure args is always a dict (model sometimes returns lists or strings)
+                if not isinstance(args, dict):
+                    args = {}
+                tool_calls.append(
+                    ToolCall(
+                        id=tc.id,
+                        name=tc.function.name,
+                        arguments=args,
+                    )
                 )
-                for tc in msg.tool_calls
-            ]
 
         reasoning = getattr(msg, "reasoning", None) or getattr(msg, "reasoning_content", None)
 

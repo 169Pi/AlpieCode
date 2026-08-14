@@ -133,9 +133,11 @@ class ToolExecutor:
                     if on_tool_start:
                         on_tool_start(tc.name, tc.arguments)
                     t0 = time.monotonic()
+                    # Defensive: ensure arguments is always a dict
+                    safe_args = tc.arguments if isinstance(tc.arguments, dict) else {}
                     fn = self.dispatch.get(tc.name)
                     if fn:
-                        future = pool.submit(fn, tc.arguments)
+                        future = pool.submit(fn, safe_args)
                     else:
                         future = pool.submit(lambda: f"error: Unknown tool '{tc.name}'")
                     future_to_tc[future] = (tc, t0)
@@ -161,10 +163,12 @@ class ToolExecutor:
             if on_tool_start:
                 on_tool_start(tc.name, tc.arguments)
             t0 = time.monotonic()
+            # Defensive: ensure arguments is always a dict
+            safe_args = tc.arguments if isinstance(tc.arguments, dict) else {}
             fn = self.dispatch.get(tc.name)
             if fn:
                 try:
-                    res_str = str(fn(tc.arguments))
+                    res_str = str(fn(safe_args))
                 except Exception as e:
                     res_str = f"error: {e}"
             else:
