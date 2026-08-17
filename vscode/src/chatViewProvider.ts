@@ -109,6 +109,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this._post({ action: "streamStart" });
 
     let assistantBuf = "";
+    this._modifiedFiles = [];
 
     this._abortStream = streamChat(
       url,
@@ -138,6 +139,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         this._saveHistory();
         this._post({ action: "streamEnd" });
         this._abortStream = undefined;
+
+        // Auto-run generated code in sandbox terminal
+        if (this._modifiedFiles.length > 0) {
+          this._sandboxRun(workdir);
+        }
       }
     );
   }
@@ -145,6 +151,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private _abort() {
     if (this._abortStream) { this._abortStream(); this._abortStream = undefined; }
   }
+
+  /** Files modified during the current stream (for sandbox auto-run). */
+  private _modifiedFiles: string[] = [];
 
   private async _handleToolCallDiff(workdir: string, data: any) {
     const name = data.name;
@@ -154,20 +163,166 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
     if (!args || !args.path) { return; }
 
-    const relPath = args.path;
+    const relPath: string = args.path;
+    const absPath = path.isAbsolute(relPath) ? relPath : path.join(workdir, relPath);
+
+    const showDiffs = vscode.workspace
+      .getConfiguration("alpiecode")
+      .get<boolean>("showDiffPreview", false);
 
     if (name === "write_file") {
       const content = args.content || "";
-      await showDiffPreview(workdir, relPath, content, "write_file");
+      const fileExists = fs.existsSync(absPath);
+
+      if (showDiffs && fileExists) {
+        await showDiffPreview(workdir, relPath, content, "write_file");
+      } else {
+        const dir = path.dirname(absPath);
+        if (!fs.existsSync(dir)) { fs.mkdirSync(dir, { recursive: true }); }
+        fs.writeFileSync(absPath, content, "utf-8");
+        try {
+          const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(absPath));
+          await vscode.window.showTextDocument(doc, { preview: false, preserveFocus: true });
+        } catch { /* file may be binary or unsupported */ }
+      }
+      this._modifiedFiles.push(relPath);
+
     } else if (name === "edit_file") {
-      const absPath = path.isAbsolute(relPath) ? relPath : path.join(workdir, relPath);
       let existing = "";
       try { existing = fs.readFileSync(absPath, "utf-8"); } catch {}
       const oldStr = args.old_str || "";
       const newStr = args.new_str || "";
       const newContent = oldStr ? existing.replace(oldStr, newStr) : newStr;
-      await showDiffPreview(workdir, relPath, newContent, "edit_file");
+
+      if (showDiffs) {
+        await showDiffPreview(workdir, relPath, newContent, "edit_file");
+      } else {
+        fs.writeFileSync(absPath, newContent, "utf-8");
+        try {
+          const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(absPath));
+          await vscode.window.showTextDocument(doc, { preview: false, preserveFocus: true });
+        } catch {}
+      }
+      this._modifiedFiles.push(relPath);
     }
+  }
+
+  /* ---- Sandbox Execution ---- */
+
+  private _detectRunCommand(files: string[], workdir: string): string | null {
+    const mainPatterns = ["main", "app", "index", "server", "game"];
+    const sorted = [...files].sort((a, b) => {
+      const aBase = path.basename(a, path.extname(a)).toLowerCase();
+      const bBase = path.basename(b, path.extname(b)).toLowerCase();
+      const aMain = mainPatterns.some(p => aBase.includes(p)) ? 0 : 1;
+      const bMain = mainPatterns.some(p => bBase.includes(p)) ? 0 : 1;
+      return aMain - bMain;
+    });
+
+    for (const f of sorted) {
+      const ext = path.extname(f).toLowerCase();
+      const absF = path.isAbsolute(f) ? f : path.join(workdir, f);
+      if (!fs.existsSync(absF)) { continue; }
+
+      if (ext === ".py")   { return "python3 \"" + f + "\""; }
+      if (ext === ".js")   { return "node \"" + f + "\""; }
+      if (ext === ".ts")   { return "npx ts-node \"" + f + "\""; }
+      if (ext === ".cpp")  {
+        const out = f.replace(/\.cpp$/, "");
+        return "g++ -Wall -Wextra -std=c++17 -o \"" + out + "\" \"" + f + "\" && ./\"" + out + "\"";
+      }
+      if (ext === ".c")    {
+        const out = f.replace(/\.c$/, "");
+        return "gcc -Wall -Wextra -o \"" + out + "\" \"" + f + "\" && ./\"" + out + "\"";
+      }
+      if (ext === ".rs")   { return "rustc \"" + f + "\" -o main && ./main"; }
+      if (ext === ".go")   { return "go run \"" + f + "\""; }
+      if (ext === ".java") {
+        const cls = path.basename(f, ".java");
+        return "javac \"" + f + "\" && java \"" + cls + "\"";
+      }
+      if (ext === ".sh")   { return "bash \"" + f + "\""; }
+      if (ext === ".html") { return null; }
+    }
+    return null;
+  }
+
+  private async _sandboxRun(workdir: string) {
+    const autoRun = vscode.workspace
+      .getConfiguration("alpiecode")
+      .get<boolean>("autoRun", true);
+    if (!autoRun) { return; }
+
+    const files = [...new Set(this._modifiedFiles)];
+    if (files.length === 0) { return; }
+
+    const runCmd = this._detectRunCommand(files, workdir);
+    if (!runCmd) { return; }
+
+    const autoFix = vscode.workspace
+      .getConfiguration("alpiecode")
+      .get<boolean>("autoFix", true);
+
+    const task = new vscode.Task(
+      { type: "alpiecode-sandbox" },
+      vscode.TaskScope.Workspace,
+      "AlpieCode Sandbox",
+      "AlpieCode",
+      new vscode.ShellExecution(runCmd, { cwd: workdir })
+    );
+    task.presentationOptions = {
+      reveal: vscode.TaskRevealKind.Always,
+      panel: vscode.TaskPanelKind.Shared,
+      focus: false,
+    };
+
+    const execution = await vscode.tasks.executeTask(task);
+
+    if (autoFix) {
+      const disposable = vscode.tasks.onDidEndTaskProcess((e) => {
+        if (e.execution === execution) {
+          disposable.dispose();
+          if (e.exitCode !== 0) {
+            this._autoFixError(workdir, files, runCmd, e.exitCode || 1);
+          } else {
+            vscode.window.showInformationMessage("AlpieCode: Code executed successfully!");
+          }
+        }
+      });
+    }
+  }
+
+  private _autoFixError(workdir: string, files: string[], runCmd: string, exitCode: number) {
+    const errors: string[] = [];
+    for (const f of files) {
+      const absPath = path.isAbsolute(f) ? f : path.join(workdir, f);
+      const uri = vscode.Uri.file(absPath);
+      const diags = vscode.languages.getDiagnostics(uri);
+      for (const d of diags) {
+        if (d.severity === vscode.DiagnosticSeverity.Error) {
+          errors.push(f + ":" + (d.range.start.line + 1) + ": " + d.message);
+        }
+      }
+    }
+
+    const errorSummary = errors.length > 0
+      ? errors.slice(0, 10).join("\n")
+      : "Command \"" + runCmd + "\" failed with exit code " + exitCode;
+
+    let fixPrompt = "The code I just wrote has errors. Fix them and make it work correctly.\n\n";
+    fixPrompt += "Execution command: " + runCmd + "\n";
+    fixPrompt += "Exit code: " + exitCode + "\n";
+    if (errors.length > 0) {
+      fixPrompt += "\nDiagnostic errors:\n" + errorSummary;
+    } else {
+      fixPrompt += "\nThe command failed. Read the file, find the bug, and fix it.";
+    }
+    fixPrompt += "\n\nFiles to fix: " + files.join(", ");
+
+    setTimeout(() => {
+      this._post({ action: "userMessage", text: "Auto-fixing execution errors..." });
+      this._stream(fixPrompt);
+    }, 1500);
   }
 
   /* ---- Message handler ---- */

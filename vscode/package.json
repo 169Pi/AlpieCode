@@ -1,14 +1,18 @@
 {
   "name": "alpiecode",
   "displayName": "AlpieCode",
-  "description": "AI coding agent powered by 169Pi — chat, fix bugs, generate tests, refactor code",
-  "version": "0.3.0",
+  "description": "AI coding agent powered by 169Pi \u2014 chat, fix bugs, generate tests, refactor code",
+  "version": "0.4.0",
   "publisher": "169pi",
   "license": "MIT",
   "engines": {
     "vscode": "^1.85.0"
   },
-  "categories": ["AI", "Chat", "Programming Languages"],
+  "categories": [
+    "AI",
+    "Chat",
+    "Programming Languages"
+  ],
   "icon": "media/icon.png",
   "activationEvents": [],
   "main": "./out/extension.js",
@@ -32,19 +36,49 @@
       ]
     },
     "commands": [
-      { "command": "alpiecode.fixError", "title": "AlpieCode: Fix This Error" },
-      { "command": "alpiecode.generateTests", "title": "AlpieCode: Generate Tests" },
-      { "command": "alpiecode.explainCode", "title": "AlpieCode: Explain Code" },
-      { "command": "alpiecode.refactorCode", "title": "AlpieCode: Refactor / Optimize" },
-      { "command": "alpiecode.askAboutCode", "title": "AlpieCode: Ask About Selection" }
+      {
+        "command": "alpiecode.fixError",
+        "title": "AlpieCode: Fix This Error"
+      },
+      {
+        "command": "alpiecode.generateTests",
+        "title": "AlpieCode: Generate Tests"
+      },
+      {
+        "command": "alpiecode.explainCode",
+        "title": "AlpieCode: Explain Code"
+      },
+      {
+        "command": "alpiecode.refactorCode",
+        "title": "AlpieCode: Refactor / Optimize"
+      },
+      {
+        "command": "alpiecode.askAboutCode",
+        "title": "AlpieCode: Ask About Selection"
+      }
     ],
     "menus": {
       "editor/context": [
-        { "command": "alpiecode.fixError", "group": "alpiecode@1" },
-        { "command": "alpiecode.generateTests", "group": "alpiecode@2" },
-        { "command": "alpiecode.explainCode", "group": "alpiecode@3" },
-        { "command": "alpiecode.refactorCode", "group": "alpiecode@4" },
-        { "command": "alpiecode.askAboutCode", "group": "alpiecode@5" }
+        {
+          "command": "alpiecode.fixError",
+          "group": "alpiecode@1"
+        },
+        {
+          "command": "alpiecode.generateTests",
+          "group": "alpiecode@2"
+        },
+        {
+          "command": "alpiecode.explainCode",
+          "group": "alpiecode@3"
+        },
+        {
+          "command": "alpiecode.refactorCode",
+          "group": "alpiecode@4"
+        },
+        {
+          "command": "alpiecode.askAboutCode",
+          "group": "alpiecode@5"
+        }
       ]
     },
     "configuration": {
@@ -64,6 +98,21 @@
           "type": "boolean",
           "default": true,
           "description": "Enable inline code autocomplete suggestions (ghost text). Press Tab to accept."
+        },
+        "alpiecode.autoRun": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically run generated code in an integrated sandbox terminal after the agent completes."
+        },
+        "alpiecode.autoFix": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically detect execution errors and send them back to the agent for fixing."
+        },
+        "alpiecode.showDiffPreview": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show side-by-side diff preview (Accept/Reject) before applying file changes. When disabled, code is written directly to disk."
         }
       }
     }
