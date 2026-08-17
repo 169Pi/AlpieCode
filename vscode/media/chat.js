@@ -1,38 +1,50 @@
 /**
- * AlpieCode Chat — Webview Script (v2)
+ * AlpieCode Chat — Webview Script (v3)
  *
- * Clean chat interface with:
- * - No turn/badge noise — just user and assistant messages
+ * Clean, fast, multimodal chat interface with:
+ * - Fresh chat session by default on launch
+ * - Multimodal image attachment (file picker, drag & drop, clipboard paste)
+ * - Image thumbnail preview & removal
  * - Thinking toggle (show/hide reasoning traces)
  * - Chat history panel (switch between conversations)
- * - Markdown rendering with code blocks
+ * - Markdown rendering with syntax-styled code blocks
  * - Tool call and result cards
  */
 
 (function () {
   const vscode = acquireVsCodeApi();
 
-  // DOM
-  const messagesEl    = document.getElementById("chat-messages");
-  const inputEl       = document.getElementById("user-input");
-  const sendBtn       = document.getElementById("send-btn");
-  const cancelBtn     = document.getElementById("cancel-btn");
-  const newChatBtn    = document.getElementById("new-chat-btn");
-  const historyBtn    = document.getElementById("history-btn");
-  const historyPanel  = document.getElementById("history-panel");
-  const historyCloseBtn = document.getElementById("history-close-btn");
-  const historyListEl = document.getElementById("history-list");
-  const statusDot     = document.getElementById("status-dot");
-  const statusText    = document.getElementById("status-text");
-  const thinkingCheck = document.getElementById("thinking-check");
+  // DOM Elements
+  const messagesEl        = document.getElementById("chat-messages");
+  const inputEl           = document.getElementById("user-input");
+  const inputArea         = document.getElementById("input-area");
+  const sendBtn           = document.getElementById("send-btn");
+  const cancelBtn         = document.getElementById("cancel-btn");
+  const newChatBtn        = document.getElementById("new-chat-btn");
+  const historyBtn        = document.getElementById("history-btn");
+  const historyPanel      = document.getElementById("history-panel");
+  const historyCloseBtn   = document.getElementById("history-close-btn");
+  const historyListEl     = document.getElementById("history-list");
+  const statusDot         = document.getElementById("status-dot");
+  const statusText        = document.getElementById("status-text");
+  const thinkingCheck     = document.getElementById("thinking-check");
+
+  // Image Attachment DOM Elements
+  const attachImgBtn      = document.getElementById("attach-img-btn");
+  const imagePreviewBar   = document.getElementById("image-preview-bar");
+  const imagePreviewThumb = document.getElementById("image-preview-thumb");
+  const imagePreviewName  = document.getElementById("image-preview-name");
+  const imagePreviewRemove= document.getElementById("image-preview-remove");
 
   let isStreaming = false;
   let currentAssistantEl = null;
   let currentAssistantText = "";
-  let showThinking = thinkingCheck.checked;
+  let currentThinkingEl = null;
+  let showThinking = thinkingCheck ? thinkingCheck.checked : true;
   let activeConversationId = null;
+  let currentAttachedImage = null; // { path: string|null, dataUrl: string, name: string }
 
-  // ---- Init ----
+  // ---- Initialize (Clean Welcome State) ----
   showWelcome();
   vscode.postMessage({ action: "checkStatus" });
   vscode.postMessage({ action: "getHistory" });
@@ -44,6 +56,7 @@
   newChatBtn.addEventListener("click", () => {
     vscode.postMessage({ action: "newChat" });
     activeConversationId = null;
+    clearAttachedImage();
     messagesEl.innerHTML = "";
     showWelcome();
     closeHistory();
@@ -58,65 +71,178 @@
 
   historyCloseBtn.addEventListener("click", closeHistory);
 
-  thinkingCheck.addEventListener("change", () => {
-    showThinking = thinkingCheck.checked;
-    // Show/hide existing thinking blocks
-    document.querySelectorAll(".thinking-block").forEach((el) => {
-      el.style.display = showThinking ? "" : "none";
+  if (thinkingCheck) {
+    thinkingCheck.addEventListener("change", () => {
+      showThinking = thinkingCheck.checked;
+      document.querySelectorAll(".thinking-block").forEach((el) => {
+        el.style.display = showThinking ? "" : "none";
+      });
     });
-  });
+  }
 
+  // Multimodal Image Attachment Buttons
+  if (attachImgBtn) {
+    attachImgBtn.addEventListener("click", () => {
+      vscode.postMessage({ action: "attachImage" });
+    });
+  }
+
+  if (imagePreviewRemove) {
+    imagePreviewRemove.addEventListener("click", clearAttachedImage);
+  }
+
+  // Keyboard Shortcuts
   inputEl.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
       sendMessage();
     }
-    // Allow Enter for newlines (no auto-send)
   });
 
   // Auto-resize textarea
   inputEl.addEventListener("input", () => {
     inputEl.style.height = "auto";
-    inputEl.style.height = Math.min(inputEl.scrollHeight, 100) + "px";
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 120) + "px";
   });
 
-  // ---- Message Handler from Extension ----
-  window.addEventListener("message", (event) => {
-    const msg = event.data;
-    switch (msg.action) {
+  // Clipboard Paste Support (Images)
+  document.addEventListener("paste", (e) => {
+    const items = e.clipboardData ? e.clipboardData.items : null;
+    if (!items) return;
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.indexOf("image") !== -1) {
+        const blob = item.getAsFile();
+        if (blob) {
+          const reader = new FileReader();
+          reader.onload = (evt) => {
+            setAttachedImage({
+              path: null,
+              dataUrl: evt.target.result,
+              name: "pasted-image.png"
+            });
+          };
+          reader.readAsDataURL(blob);
+          e.preventDefault();
+          break;
+        }
+      }
+    }
+  });
+
+  // Drag and Drop Support (Images)
+  if (inputArea) {
+    inputArea.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      inputArea.classList.add("drag-over");
+    });
+    inputArea.addEventListener("dragleave", () => {
+      inputArea.classList.remove("drag-over");
+    });
+    inputArea.addEventListener("drop", (e) => {
+      e.preventDefault();
+      inputArea.classList.remove("drag-over");
+      const files = e.dataTransfer ? e.dataTransfer.files : null;
+      if (files && files.length > 0 && files[0].type.startsWith("image/")) {
+        const file = files[0];
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+          setAttachedImage({
+            path: file.path || null,
+            dataUrl: evt.target.result,
+            name: file.name
+          });
+        };
+        reader.readAsDataURL(file);
+      }
+    });
+  }
+
+  // ---- Webview Message Handler ----
+  window.addEventListener("message", (e) => {
+    const message = e.data;
+    switch (message.action) {
+      case "serverStatus":
+        updateStatus(message.status);
+        break;
+
       case "userMessage":
-        appendUserMessage(msg.text);
+        clearWelcome();
+        appendUserMessage(message.text, message.image);
         break;
-      case "agentEvent":
-        handleAgentEvent(msg.event);
+
+      case "imageAttached":
+        setAttachedImage(message);
         break;
+
       case "streamStart":
         setStreaming(true);
+        currentAssistantEl = null;
+        currentAssistantText = "";
+        currentThinkingEl = null;
         break;
+
       case "streamEnd":
-        finalizeAssistantMessage();
         setStreaming(false);
+        finalizeAssistantMessage();
         break;
-      case "serverStatus":
-        updateStatus(msg.status);
+
+      case "agentEvent":
+        handleAgentEvent(message.event);
         break;
+
       case "historyList":
-        renderHistoryList(msg.conversations);
+        renderHistoryList(message.conversations);
         break;
+
       case "restoreChat":
-        restoreChat(msg.messages);
+        restoreChat(message.messages);
         break;
     }
   });
 
-  // ---- Core Functions ----
+  // ---- Image Handling ----
+
+  function setAttachedImage(imgData) {
+    if (!imgData || !imgData.dataUrl) return;
+    currentAttachedImage = imgData;
+    if (imagePreviewBar && imagePreviewThumb && imagePreviewName) {
+      imagePreviewThumb.src = imgData.dataUrl;
+      imagePreviewName.textContent = imgData.name || "image.png";
+      imagePreviewBar.classList.remove("hidden");
+    }
+  }
+
+  function clearAttachedImage() {
+    currentAttachedImage = null;
+    if (imagePreviewBar && imagePreviewThumb && imagePreviewName) {
+      imagePreviewThumb.src = "";
+      imagePreviewName.textContent = "";
+      imagePreviewBar.classList.add("hidden");
+    }
+  }
+
+  // ---- Chat Logic ----
 
   function sendMessage() {
     const text = inputEl.value.trim();
-    if (!text || isStreaming) return;
-    vscode.postMessage({ action: "sendMessage", text });
+    if (!text && !currentAttachedImage) return;
+    if (isStreaming) return;
+
+    clearWelcome();
+    const imgToSend = currentAttachedImage;
+    clearAttachedImage();
+
     inputEl.value = "";
     inputEl.style.height = "auto";
+
+    vscode.postMessage({
+      action: "sendMessage",
+      text: text || "Analyze this image and execute the task",
+      image: imgToSend ? (imgToSend.path || imgToSend.dataUrl) : undefined
+    });
+
+    setStreaming(true);
   }
 
   function closeHistory() {
@@ -124,98 +250,84 @@
   }
 
   function showWelcome() {
-    messagesEl.innerHTML = `
-      <div class="welcome">
-        <h2>AlpieCode</h2>
-        <p>AI coding agent by 169Pi. Write code, fix bugs, generate tests, or ask anything.</p>
-        <p style="margin-top:10px;font-size:11px;">💡 Right-click code for quick actions</p>
-      </div>
-    `;
+    if (messagesEl.children.length === 0) {
+      const welcome = document.createElement("div");
+      welcome.className = "welcome";
+      welcome.id = "welcome-card";
+      welcome.innerHTML = `
+        <div class="welcome-icon">⚡</div>
+        <h2>AlpieCode AI Agent</h2>
+        <p>Ask a question, request code generation, or attach mockups & screenshots (📎).</p>
+      `;
+      messagesEl.appendChild(welcome);
+    }
   }
 
   function clearWelcome() {
-    const w = messagesEl.querySelector(".welcome");
+    const w = document.getElementById("welcome-card");
     if (w) w.remove();
   }
 
-  function appendUserMessage(text) {
-    clearWelcome();
-    const el = document.createElement("div");
-    el.className = "msg user";
-    el.textContent = text;
-    messagesEl.appendChild(el);
-    scrollToBottom();
-  }
-
   function handleAgentEvent(event) {
-    clearWelcome();
+    if (!event) return;
 
     switch (event.type) {
-      case "start":
-      case "adaptive_mode":
-      case "turn_start":
-        // Silently consume these — no visual noise
+      case "thinking": {
+        const text = event.data.content || event.data.text || event.data.delta || "";
+        if (text) appendThinking(text);
         break;
-
-      case "cache_hit":
-        appendCacheHit();
+      }
+      case "message":
+      case "token": {
+        const text = event.data.content || event.data.text || event.data.delta || "";
+        if (text) appendAssistantToken(text);
         break;
-
-      case "thinking":
-        appendThinking(event.data.content || event.data.text || "");
-        break;
-
+      }
       case "tool_call":
-        finalizeAssistantMessage();
         appendToolCall(event.data);
         break;
-
       case "tool_result":
         appendToolResult(event.data);
         break;
-
-      case "message":
-      case "token":
-        appendAssistantToken(event.data.content || event.data.text || "");
-        break;
-
       case "error":
-        finalizeAssistantMessage();
-        appendError(event.data.error || event.data.message || "Unknown error");
+        appendError(event.data.error || "An error occurred");
         break;
-
       case "done":
         finalizeAssistantMessage();
-        break;
-
-      default:
-        // Silently ignore unknown events
         break;
     }
   }
 
-  function appendCacheHit() {
+  function appendUserMessage(text, imageSrc) {
     const el = document.createElement("div");
-    el.style.cssText = "font-size:11px;opacity:0.6;padding:3px 8px;color:#4ade80;";
-    el.textContent = "⚡ Cached response (instant)";
+    el.className = "msg user";
+
+    if (imageSrc) {
+      const imgEl = document.createElement("img");
+      imgEl.className = "msg-user-img";
+      imgEl.src = imageSrc;
+      imgEl.alt = "Attached image";
+      el.appendChild(imgEl);
+    }
+
+    const textEl = document.createElement("div");
+    textEl.className = "msg-user-text";
+    textEl.textContent = text;
+    el.appendChild(textEl);
+
     messagesEl.appendChild(el);
     scrollToBottom();
   }
 
-  let currentThinkingEl = null;
-
   function appendThinking(text) {
-    if (!text) return;
-    finalizeAssistantMessage();
-
     if (!currentThinkingEl) {
       const block = document.createElement("div");
       block.className = "thinking-block";
-      block.style.display = showThinking ? "" : "none";
+      if (!showThinking) block.style.display = "none";
 
       const header = document.createElement("div");
       header.className = "thinking-header";
-      header.innerHTML = '<span class="chevron">▼</span> 💭 Thinking...';
+      header.innerHTML = '<span class="chevron">▼</span> <span>💭 Thinking Process</span>';
 
       const content = document.createElement("div");
       content.className = "thinking-content";
@@ -321,7 +433,6 @@
   function updateStatus(status) {
     statusDot.className = "dot " + (status.online ? "online" : "offline");
     if (status.online) {
-      // Show short backend name
       let backend = status.backend || "";
       if (backend.length > 35) backend = backend.substring(0, 35) + "…";
       statusText.textContent = "Connected · " + backend;
@@ -359,14 +470,12 @@
         <button class="history-delete" title="Delete">🗑</button>
       `;
 
-      // Click to load conversation
       item.querySelector(".history-item-content").addEventListener("click", () => {
         activeConversationId = conv.id;
         vscode.postMessage({ action: "loadConversation", id: conv.id });
         closeHistory();
       });
 
-      // Delete button
       item.querySelector(".history-delete").addEventListener("click", (e) => {
         e.stopPropagation();
         vscode.postMessage({ action: "deleteConversation", id: conv.id });
@@ -389,7 +498,7 @@
     clearWelcome();
     messages.forEach((msg) => {
       if (msg.role === "user") {
-        appendUserMessage(msg.content);
+        appendUserMessage(msg.content, msg.image);
       } else if (msg.role === "assistant" && msg.content) {
         const el = document.createElement("div");
         el.className = "msg assistant";
@@ -405,8 +514,9 @@
   function getToolIcon(name) {
     const icons = {
       write_file: "📝", edit_file: "✏️", read_file: "📖",
-      run_command: "⚡", search_files: "🔍", list_directory: "📁",
-      delete_file: "🗑️", web_search: "🌐", create_directory: "📂",
+      bash: "⚡", file_search: "🔍", list_files: "📁",
+      apply_patch: "🩹", web_search: "🌐", fetch_url: "🔗",
+      view_image: "🖼️", clone_repo: "🐙", update_plan: "📋"
     };
     return icons[name] || "🔧";
   }
@@ -444,42 +554,25 @@
     return days + "d ago";
   }
 
-  /**
-   * Lightweight markdown renderer.
-   */
   function renderMarkdown(text) {
     if (!text) return "";
     let html = text;
 
-    // Fenced code blocks
     html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
       return '<pre><code class="language-' + (lang || "text") + '">' +
         escapeHtml(code.trim()) + "</code></pre>";
     });
 
-    // Inline code
     html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
-
-    // Headers
     html = html.replace(/^### (.+)$/gm, "<h3>$1</h3>");
     html = html.replace(/^## (.+)$/gm, "<h2>$1</h2>");
     html = html.replace(/^# (.+)$/gm, "<h1>$1</h1>");
-
-    // Bold & italic
     html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
     html = html.replace(/\*(.+?)\*/g, "<em>$1</em>");
-
-    // Blockquotes
     html = html.replace(/^> (.+)$/gm, "<blockquote>$1</blockquote>");
-
-    // Unordered lists
     html = html.replace(/^[-*] (.+)$/gm, "<li>$1</li>");
     html = html.replace(/((?:<li>.*<\/li>\n?)+)/g, "<ul>$1</ul>");
-
-    // Links
     html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
-
-    // Paragraphs
     html = html.replace(/\n{2,}/g, "</p><p>");
     if (!html.startsWith("<")) html = "<p>" + html;
     if (!html.endsWith(">")) html += "</p>";

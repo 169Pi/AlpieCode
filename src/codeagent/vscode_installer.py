@@ -104,8 +104,18 @@ def ensure_vscode_extension(auto_confirm: bool = False, quiet: bool = False) -> 
 
     print(f"📦 Installing AlpieCode VS Code extension ({vsix_path.name})...")
     try:
+        target_arg = str(vsix_path)
+        # If running in WSL and code_bin points to Windows binary, convert path to Windows format
+        if os.path.exists("/proc/version") and shutil.which("wslpath") and ("/mnt/" in code_bin or code_bin.endswith(".cmd") or code_bin.endswith(".exe")):
+            try:
+                win_path = subprocess.check_output(["wslpath", "-w", str(vsix_path)], text=True).strip()
+                if win_path:
+                    target_arg = win_path
+            except Exception:
+                pass
+
         res = subprocess.run(
-            [code_bin, "--install-extension", str(vsix_path), "--force"],
+            [code_bin, "--install-extension", target_arg, "--force"],
             capture_output=True,
             text=True,
             timeout=30,

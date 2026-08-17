@@ -72,6 +72,7 @@ export interface StreamOptions {
   task: string;
   workdir: string;
   sessionId?: string;
+  image?: string;
 }
 
 /**
@@ -102,6 +103,7 @@ export function streamChat(
       workdir: options.workdir,
     };
     if (options.sessionId) { body.session_id = options.sessionId; }
+    if (options.image) { body.image = options.image; }
 
     const payload = JSON.stringify(body);
 

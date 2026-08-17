@@ -2,7 +2,8 @@
  * Chat sidebar webview provider for AlpieCode.
  *
  * Cross-platform (Windows / Linux / macOS).
- * Manages webview lifecycle, SSE streaming, chat history, and workdir resolution.
+ * Manages webview lifecycle, SSE streaming, chat history, workdir resolution,
+ * multimodal image attachments, and sandbox task execution.
  */
 
 import * as vscode from "vscode";
@@ -19,6 +20,7 @@ import { showDiffPreview } from "./diffHelper";
 interface ChatMessage {
   role: "user" | "assistant";
   content: string;
+  image?: string;
   timestamp: number;
 }
 
@@ -69,35 +71,36 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     wv.onDidDispose(() => { this._abort(); this._view = undefined; });
 
     this._healthCheck();
-    // Small delay so webview script is ready before we push data
+
+    // Start fresh by default; populate the history drawer with past conversations
+    this._activeId = null;
     setTimeout(() => {
       this._pushHistoryList();
-      if (this._activeId) { this._restoreConv(this._activeId); }
     }, 200);
   }
 
   /* ---- Public (called from code actions) ---- */
 
-  public sendTask(task: string) {
+  public sendTask(task: string, image?: string) {
     if (!this._view) {
       vscode.window.showErrorMessage("AlpieCode panel not open.");
       return;
     }
     this._view.show?.(true);
-    this._post({ action: "userMessage", text: task });
-    this._stream(task);
+    this._post({ action: "userMessage", text: task, image });
+    this._stream(task, image);
   }
 
   /* ---- Streaming ---- */
 
-  private _stream(task: string) {
+  private _stream(task: string, image?: string) {
     this._abort();
 
     if (!this._activeId) { this._newConv(task); }
     const conv = this._activeConv();
     if (!conv) { return; }
 
-    conv.messages.push({ role: "user", content: task, timestamp: Date.now() });
+    conv.messages.push({ role: "user", content: task, image, timestamp: Date.now() });
     this._saveHistory();
 
     const url = vscode.workspace
@@ -113,7 +116,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
     this._abortStream = streamChat(
       url,
-      { task, workdir, sessionId: conv.sessionId },
+      { task, workdir, sessionId: conv.sessionId, image },
       (ev) => {
         if (ev.type === "start" && ev.data.session_id) {
           conv.sessionId = ev.data.session_id;
@@ -325,13 +328,53 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }, 1500);
   }
 
+  /* ---- Multimodal Image Picker ---- */
+
+  private async _pickImage() {
+    const uris = await vscode.window.showOpenDialog({
+      canSelectFiles: true,
+      canSelectFolders: false,
+      canSelectMany: false,
+      openLabel: "Attach Image",
+      filters: {
+        Images: ["png", "jpg", "jpeg", "webp", "svg", "gif"]
+      }
+    });
+
+    if (!uris || uris.length === 0) { return; }
+
+    const uri = uris[0];
+    const filePath = uri.fsPath;
+    const fileName = path.basename(filePath);
+
+    try {
+      const ext = path.extname(filePath).toLowerCase().replace(".", "");
+      const mimeType = ext === "svg" ? "image/svg+xml" : (ext === "jpg" ? "image/jpeg" : "image/" + ext);
+      const fileBytes = fs.readFileSync(filePath);
+      const base64 = fileBytes.toString("base64");
+      const dataUrl = "data:" + mimeType + ";base64," + base64;
+
+      this._post({
+        action: "imageAttached",
+        path: filePath,
+        dataUrl,
+        name: fileName
+      });
+    } catch (err: any) {
+      vscode.window.showErrorMessage("Failed to load image: " + (err?.message || err));
+    }
+  }
+
   /* ---- Message handler ---- */
 
   private _onMessage(m: any) {
     switch (m.action) {
       case "sendMessage":
-        this._post({ action: "userMessage", text: m.text });
-        this._stream(m.text);
+        this._post({ action: "userMessage", text: m.text, image: m.image });
+        this._stream(m.text, m.image);
+        break;
+      case "attachImage":
+        this._pickImage();
         break;
       case "cancelStream":
         this._abort();
@@ -406,7 +449,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   /* ---- History ---- */
 
   private _newConv(firstMsg: string): string {
-    const id = `c_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const id = "c_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7);
     const title = firstMsg.length > 60 ? firstMsg.slice(0, 60) + "…" : firstMsg;
     this._conversations.unshift({ id, title, messages: [], createdAt: Date.now() });
     if (this._conversations.length > 50) { this._conversations.length = 50; }
@@ -477,7 +520,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta http-equiv="Content-Security-Policy"
-    content="default-src 'none'; style-src ${wv.cspSource} 'unsafe-inline'; script-src 'nonce-${n}';">
+    content="default-src 'none'; img-src ${wv.cspSource} data: blob: https:; style-src ${wv.cspSource} 'unsafe-inline'; script-src 'nonce-${n}';">
   <link rel="stylesheet" href="${css}">
   <title>AlpieCode</title>
 </head>
@@ -502,14 +545,22 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   </div>
   <div id="chat-messages"></div>
   <div id="input-area">
+    <div id="image-preview-bar" class="hidden">
+      <div id="image-preview-item">
+        <img id="image-preview-thumb" src="" alt="Attached image">
+        <span id="image-preview-name"></span>
+        <button id="image-preview-remove" title="Remove image">✕</button>
+      </div>
+    </div>
     <div id="input-options">
       <label id="thinking-toggle" title="Show thinking traces">
         <input type="checkbox" id="thinking-check" checked>
         <span>💭 Thinking</span>
       </label>
+      <button id="attach-img-btn" title="Attach Image / Screenshot (Multimodal)">📎 Add Image</button>
     </div>
     <div id="input-row">
-      <textarea id="user-input" placeholder="Ask AlpieCode anything…" rows="1"></textarea>
+      <textarea id="user-input" placeholder="Ask AlpieCode anything..." rows="1"></textarea>
       <button id="send-btn" title="Send (Ctrl+Enter)">➤</button>
       <button id="cancel-btn" title="Stop" class="hidden">■</button>
     </div>
