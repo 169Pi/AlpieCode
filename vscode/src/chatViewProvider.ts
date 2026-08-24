@@ -3,7 +3,7 @@
  *
  * Cross-platform (Windows / Linux / macOS).
  * Manages webview lifecycle, SSE streaming, chat history, workdir resolution,
- * multimodal image attachments, and sandbox task execution.
+ * multimodal image attachments, change plan approval, and sandbox execution.
  */
 
 import * as vscode from "vscode";
@@ -32,6 +32,24 @@ interface Conversation {
   createdAt: number;
 }
 
+interface PendingChange {
+  workdir: string;
+  relPath: string;
+  absPath: string;
+  newContent: string;
+  oldContent: string;
+  toolName: string;
+  isNewFile: boolean;
+  oldStr?: string;
+  newStr?: string;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Constants                                                         */
+/* ------------------------------------------------------------------ */
+
+const MAX_AUTO_FIX_RETRIES = 3;
+
 /* ------------------------------------------------------------------ */
 /*  Provider                                                          */
 /* ------------------------------------------------------------------ */
@@ -44,6 +62,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
   private _conversations: Conversation[] = [];
   private _activeId: string | null = null;
+
+  /** Pending change awaiting user approval (edit to existing file). */
+  private _pendingChange: PendingChange | null = null;
+
+  /** Auto-fix retry counter to prevent infinite loops. */
+  private _autoFixRetries = 0;
 
   constructor(
     private readonly _extUri: vscode.Uri,
@@ -125,7 +149,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           assistantBuf += ev.data.content || ev.data.text || "";
         }
         if (ev.type === "tool_call") {
-          this._handleToolCallDiff(workdir, ev.data);
+          this._handleToolCall(workdir, ev.data);
         }
         this._post({ action: "agentEvent", event: ev });
       },
@@ -143,8 +167,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         this._post({ action: "streamEnd" });
         this._abortStream = undefined;
 
-        // Auto-run generated code in sandbox terminal
-        if (this._modifiedFiles.length > 0) {
+        // Auto-run generated code in sandbox terminal (only if no pending approval)
+        if (this._modifiedFiles.length > 0 && !this._pendingChange) {
           this._sandboxRun(workdir);
         }
       }
@@ -155,10 +179,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     if (this._abortStream) { this._abortStream(); this._abortStream = undefined; }
   }
 
+  /* ---- File Change Handling (Two-Mode) ---- */
+
   /** Files modified during the current stream (for sandbox auto-run). */
   private _modifiedFiles: string[] = [];
 
-  private async _handleToolCallDiff(workdir: string, data: any) {
+  private async _handleToolCall(workdir: string, data: any) {
     const name = data.name;
     let args = data.arguments;
     if (typeof args === "string") {
@@ -169,26 +195,33 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     const relPath: string = args.path;
     const absPath = path.isAbsolute(relPath) ? relPath : path.join(workdir, relPath);
 
-    const showDiffs = vscode.workspace
-      .getConfiguration("alpiecode")
-      .get<boolean>("showDiffPreview", false);
-
     if (name === "write_file") {
       const content = args.content || "";
       const fileExists = fs.existsSync(absPath);
+      let existingContent = "";
+      if (fileExists) {
+        try { existingContent = fs.readFileSync(absPath, "utf-8"); } catch {}
+      }
 
-      if (showDiffs && fileExists) {
-        await showDiffPreview(workdir, relPath, content, "write_file");
-      } else {
+      if (!fileExists) {
+        // MODE 1: New file — write directly, no approval needed
         const dir = path.dirname(absPath);
         if (!fs.existsSync(dir)) { fs.mkdirSync(dir, { recursive: true }); }
         fs.writeFileSync(absPath, content, "utf-8");
         try {
           const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(absPath));
           await vscode.window.showTextDocument(doc, { preview: false, preserveFocus: true });
-        } catch { /* file may be binary or unsupported */ }
+        } catch {}
+        this._modifiedFiles.push(relPath);
+        this._autoFixRetries = 0; // reset retries on new file creation
+      } else {
+        // MODE 2: Existing file — show change plan for approval
+        this._pendingChange = {
+          workdir, relPath, absPath, newContent: content,
+          oldContent: existingContent, toolName: "write_file", isNewFile: false
+        };
+        this._sendChangePlan();
       }
-      this._modifiedFiles.push(relPath);
 
     } else if (name === "edit_file") {
       let existing = "";
@@ -197,17 +230,83 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       const newStr = args.new_str || "";
       const newContent = oldStr ? existing.replace(oldStr, newStr) : newStr;
 
-      if (showDiffs) {
-        await showDiffPreview(workdir, relPath, newContent, "edit_file");
-      } else {
-        fs.writeFileSync(absPath, newContent, "utf-8");
-        try {
-          const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(absPath));
-          await vscode.window.showTextDocument(doc, { preview: false, preserveFocus: true });
-        } catch {}
-      }
-      this._modifiedFiles.push(relPath);
+      // MODE 2: Edit to existing file — show change plan for approval
+      this._pendingChange = {
+        workdir, relPath, absPath, newContent,
+        oldContent: existing, toolName: "edit_file", isNewFile: false,
+        oldStr, newStr
+      };
+      this._sendChangePlan();
     }
+  }
+
+  /** Send a change plan card to the webview for user approval. */
+  private _sendChangePlan() {
+    if (!this._pendingChange) { return; }
+    const pc = this._pendingChange;
+
+    // Build a simple line-level diff for the webview
+    const oldLines = pc.oldContent.split("\n");
+    const newLines = pc.newContent.split("\n");
+    const diffLines: { type: string; text: string }[] = [];
+
+    // Simple diff: show removed and added lines
+    if (pc.oldStr && pc.newStr) {
+      // For edit_file: show the specific old_str → new_str change
+      pc.oldStr.split("\n").forEach(l => diffLines.push({ type: "removed", text: l }));
+      pc.newStr.split("\n").forEach(l => diffLines.push({ type: "added", text: l }));
+    } else {
+      // For write_file overwrite: show first few changed lines
+      const maxLines = 20;
+      let changes = 0;
+      for (let i = 0; i < Math.max(oldLines.length, newLines.length) && changes < maxLines; i++) {
+        if (i < oldLines.length && i < newLines.length && oldLines[i] === newLines[i]) {
+          continue; // skip identical lines
+        }
+        if (i < oldLines.length) { diffLines.push({ type: "removed", text: oldLines[i] }); changes++; }
+        if (i < newLines.length) { diffLines.push({ type: "added", text: newLines[i] }); changes++; }
+      }
+      if (changes >= maxLines) {
+        diffLines.push({ type: "info", text: "... (more changes)" });
+      }
+    }
+
+    this._post({
+      action: "changePlan",
+      data: {
+        fileName: pc.relPath,
+        toolName: pc.toolName,
+        diff: diffLines,
+        isNewFile: pc.isNewFile,
+        summary: pc.toolName === "edit_file"
+          ? "Edit: replacing code in " + pc.relPath
+          : "Overwrite: replacing contents of " + pc.relPath
+      }
+    });
+  }
+
+  /** Apply the pending change to disk. */
+  private _applyPendingChange() {
+    if (!this._pendingChange) { return; }
+    const pc = this._pendingChange;
+
+    const dir = path.dirname(pc.absPath);
+    if (!fs.existsSync(dir)) { fs.mkdirSync(dir, { recursive: true }); }
+    fs.writeFileSync(pc.absPath, pc.newContent, "utf-8");
+
+    // Open the file in editor
+    vscode.workspace.openTextDocument(vscode.Uri.file(pc.absPath)).then(doc => {
+      vscode.window.showTextDocument(doc, { preview: false, preserveFocus: true });
+    });
+
+    this._modifiedFiles.push(pc.relPath);
+    const workdir = pc.workdir;
+    this._pendingChange = null;
+
+    this._post({ action: "changeApplied", fileName: pc.relPath });
+
+    // Auto-run after applying the change
+    this._sandboxRun(workdir);
   }
 
   /* ---- Sandbox Execution ---- */
@@ -288,6 +387,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           if (e.exitCode !== 0) {
             this._autoFixError(workdir, files, runCmd, e.exitCode || 1);
           } else {
+            this._autoFixRetries = 0; // reset on success
             vscode.window.showInformationMessage("AlpieCode: Code executed successfully!");
           }
         }
@@ -296,6 +396,23 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   private _autoFixError(workdir: string, files: string[], runCmd: string, exitCode: number) {
+    // Guard: prevent infinite auto-fix loops
+    this._autoFixRetries++;
+    if (this._autoFixRetries > MAX_AUTO_FIX_RETRIES) {
+      this._autoFixRetries = 0;
+      this._post({
+        action: "agentEvent",
+        event: {
+          type: "error",
+          data: { error: "Auto-fix limit reached (" + MAX_AUTO_FIX_RETRIES + " attempts). Please fix the remaining errors manually." }
+        }
+      });
+      vscode.window.showWarningMessage(
+        "AlpieCode: Auto-fix limit reached after " + MAX_AUTO_FIX_RETRIES + " attempts. Please review the code manually."
+      );
+      return;
+    }
+
     const errors: string[] = [];
     for (const f of files) {
       const absPath = path.isAbsolute(f) ? f : path.join(workdir, f);
@@ -312,18 +429,17 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       ? errors.slice(0, 10).join("\n")
       : "Command \"" + runCmd + "\" failed with exit code " + exitCode;
 
-    let fixPrompt = "The code I just wrote has errors. Fix them and make it work correctly.\n\n";
-    fixPrompt += "Execution command: " + runCmd + "\n";
-    fixPrompt += "Exit code: " + exitCode + "\n";
+    let fixPrompt = "The code has errors (attempt " + this._autoFixRetries + "/" + MAX_AUTO_FIX_RETRIES + "). Fix them precisely.\n\n";
+    fixPrompt += "Command: " + runCmd + "\nExit code: " + exitCode + "\n";
     if (errors.length > 0) {
-      fixPrompt += "\nDiagnostic errors:\n" + errorSummary;
+      fixPrompt += "\nErrors:\n" + errorSummary;
     } else {
       fixPrompt += "\nThe command failed. Read the file, find the bug, and fix it.";
     }
-    fixPrompt += "\n\nFiles to fix: " + files.join(", ");
+    fixPrompt += "\n\nFiles: " + files.join(", ");
 
     setTimeout(() => {
-      this._post({ action: "userMessage", text: "Auto-fixing execution errors..." });
+      this._post({ action: "userMessage", text: "Auto-fixing errors (attempt " + this._autoFixRetries + "/" + MAX_AUTO_FIX_RETRIES + ")..." });
       this._stream(fixPrompt);
     }, 1500);
   }
@@ -370,11 +486,26 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private _onMessage(m: any) {
     switch (m.action) {
       case "sendMessage":
+        this._autoFixRetries = 0; // reset retries on new user message
         this._post({ action: "userMessage", text: m.text, image: m.image });
         this._stream(m.text, m.image);
         break;
       case "attachImage":
         this._pickImage();
+        break;
+      case "acceptChange":
+        this._applyPendingChange();
+        break;
+      case "rejectChange":
+        this._pendingChange = null;
+        this._post({ action: "changeRejected" });
+        break;
+      case "editRequest":
+        this._pendingChange = null;
+        if (m.text) {
+          this._post({ action: "userMessage", text: m.text });
+          this._stream(m.text);
+        }
         break;
       case "cancelStream":
         this._abort();
@@ -386,6 +517,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       case "newChat":
         this._abort();
         this._activeId = null;
+        this._pendingChange = null;
+        this._autoFixRetries = 0;
         this._saveHistory();
         this._pushHistoryList();
         break;
@@ -410,23 +543,16 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
     const uri = folders[0].uri;
 
-    // VS Code Remote — WSL
     if (uri.scheme === "vscode-remote" && uri.authority.startsWith("wsl")) {
-      return uri.path; // Already Linux path
+      return uri.path;
     }
-
-    // VS Code Remote — SSH / Dev Containers / etc.
     if (uri.scheme === "vscode-remote") {
       return uri.path;
     }
 
     const fp = uri.fsPath;
-
-    // Windows accessing WSL files: \\wsl.localhost\Ubuntu\home\... or \\wsl$\Ubuntu\home\...
     const wsl = fp.match(/^\\\\wsl[\.\$][^\\]*\\[^\\]+(.+)/i);
     if (wsl) { return wsl[1].replace(/\\/g, "/"); }
-
-    // Native path (Windows C:\..., Linux /home/..., macOS /Users/...)
     return fp;
   }
 
@@ -450,7 +576,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
   private _newConv(firstMsg: string): string {
     const id = "c_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7);
-    const title = firstMsg.length > 60 ? firstMsg.slice(0, 60) + "…" : firstMsg;
+    const title = firstMsg.length > 60 ? firstMsg.slice(0, 60) + "\u2026" : firstMsg;
     this._conversations.unshift({ id, title, messages: [], createdAt: Date.now() });
     if (this._conversations.length > 50) { this._conversations.length = 50; }
     this._activeId = id;
@@ -529,17 +655,17 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   <div id="header">
     <div id="header-left">
       <span id="status-dot" class="dot offline"></span>
-      <span id="status-text">Connecting…</span>
+      <span id="status-text">Connecting\u2026</span>
     </div>
     <div id="header-right">
-      <button id="history-btn" title="Chat History">📋</button>
-      <button id="new-chat-btn" title="New Chat">＋</button>
+      <button id="history-btn" title="Chat History">\ud83d\udccb</button>
+      <button id="new-chat-btn" title="New Chat">\uff0b</button>
     </div>
   </div>
   <div id="history-panel" class="hidden">
     <div id="history-header">
       <span>Chat History</span>
-      <button id="history-close-btn">✕</button>
+      <button id="history-close-btn">\u2715</button>
     </div>
     <div id="history-list"></div>
   </div>
@@ -549,20 +675,20 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       <div id="image-preview-item">
         <img id="image-preview-thumb" src="" alt="Attached image">
         <span id="image-preview-name"></span>
-        <button id="image-preview-remove" title="Remove image">✕</button>
+        <button id="image-preview-remove" title="Remove image">\u2715</button>
       </div>
     </div>
     <div id="input-options">
       <label id="thinking-toggle" title="Show thinking traces">
         <input type="checkbox" id="thinking-check" checked>
-        <span>💭 Thinking</span>
+        <span>\ud83d\udcad Thinking</span>
       </label>
-      <button id="attach-img-btn" title="Attach Image / Screenshot (Multimodal)">📎 Add Image</button>
+      <button id="attach-img-btn" title="Attach Image / Screenshot">\ud83d\udcce Image</button>
     </div>
     <div id="input-row">
       <textarea id="user-input" placeholder="Ask AlpieCode anything..." rows="1"></textarea>
-      <button id="send-btn" title="Send (Ctrl+Enter)">➤</button>
-      <button id="cancel-btn" title="Stop" class="hidden">■</button>
+      <button id="send-btn" title="Send (Ctrl+Enter)">\u27a4</button>
+      <button id="cancel-btn" title="Stop" class="hidden">\u25a0</button>
     </div>
   </div>
 </div>
