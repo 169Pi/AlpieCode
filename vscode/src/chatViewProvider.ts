@@ -407,7 +407,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       vscode.TaskScope.Workspace,
       "AlpieCode Sandbox",
       "AlpieCode",
-      new vscode.ShellExecution(runCmd, { cwd: workdir })
+      this._wslShellExec(runCmd, workdir)
     );
     task.presentationOptions = {
       reveal: vscode.TaskRevealKind.Always,
@@ -501,7 +501,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     // 1. Check if the command binary itself is missing
     const cmdBin = runCmd.split(/\s+/)[0].replace(/"/g, "");
     try {
-      cp.execSync("which " + cmdBin, { timeout: 2000, stdio: "pipe" });
+      this._execSync("which " + cmdBin, workdir, 2000);
     } catch {
       const aptPkg = GLOBAL_INSTALL_MAP[cmdBin] || cmdBin;
       return { name: cmdBin, type: "global", installCmd: "sudo apt install -y " + aptPkg };
@@ -509,9 +509,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
     // 2. Quick re-run to capture stderr (fails instantly on missing imports)
     try {
-      const result = cp.execSync(runCmd, {
-        cwd: workdir, timeout: 8000, stdio: "pipe", encoding: "utf-8",
-      });
+      this._execSync(runCmd, workdir, 8000);
       return null; // command succeeded — no missing dep
     } catch (err: any) {
       const output = (err.stderr || "") + "\n" + (err.stdout || "");
@@ -629,7 +627,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       vscode.TaskScope.Workspace,
       "AlpieCode Install",
       "AlpieCode",
-      new vscode.ShellExecution(installCmd, { cwd: workdir })
+      this._wslShellExec(installCmd, workdir)
     );
     installTask.presentationOptions = {
       reveal: vscode.TaskRevealKind.Always,
@@ -749,6 +747,43 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         break;
     }
   }
+
+
+  /* ---- WSL Detection & Command Wrapping ---- */
+
+  /** True when VS Code accesses WSL files via UNC path (\\wsl.localhost\...) */
+  private _isWslWorkspace(): boolean {
+    const folders = vscode.workspace.workspaceFolders;
+    if (!folders?.length) { return false; }
+    const fp = folders[0].uri.fsPath;
+    return /^\\\\wsl[\.\$]/i.test(fp);
+  }
+
+  /** Wrap a shell command for WSL execution when workspace is via UNC path. */
+  private _wslShellExec(cmd: string, workdir: string): vscode.ShellExecution {
+    if (this._isWslWorkspace()) {
+      const escaped = cmd.replace(/'/g, "'\\''");
+      return new vscode.ShellExecution(
+        "wsl", ["-e", "bash", "-c", "cd '" + workdir + "' && " + escaped]
+      );
+    }
+    return new vscode.ShellExecution(cmd, { cwd: workdir });
+  }
+
+  /** Run a command synchronously, routing through WSL if needed. */
+  private _execSync(cmd: string, workdir: string, timeout: number = 8000): string {
+    if (this._isWslWorkspace()) {
+      const escaped = cmd.replace(/'/g, "'\\''");
+      return cp.execSync(
+        "wsl -e bash -c \"cd '" + workdir + "' && " + escaped + "\"",
+        { timeout, stdio: "pipe", encoding: "utf-8" }
+      );
+    }
+    return cp.execSync(cmd, {
+      cwd: workdir, timeout, stdio: "pipe", encoding: "utf-8",
+    });
+  }
+
 
   /* ---- Workdir (cross-platform) ---- */
 
