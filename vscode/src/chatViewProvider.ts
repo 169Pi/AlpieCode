@@ -382,7 +382,16 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       const absF = path.isAbsolute(f) ? f : path.join(workdir, f);
       if (!fs.existsSync(absF)) { continue; }
 
-      if (ext === ".py")   { return "python3 \"" + f + "\""; }
+      if (ext === ".py") {
+        const venvPy = path.join(workdir, ".venv", "bin", "python3");
+        const venvPyWin = path.join(workdir, ".venv", "Scripts", "python.exe");
+        if (fs.existsSync(venvPy)) {
+          return ".venv/bin/python3 \"" + f + "\"";
+        } else if (fs.existsSync(venvPyWin)) {
+          return ".venv/Scripts/python.exe \"" + f + "\"";
+        }
+        return "python3 \"" + f + "\"";
+      }
       if (ext === ".js")   { return "node \"" + f + "\""; }
       if (ext === ".ts")   { return "npx ts-node \"" + f + "\""; }
       if (ext === ".cpp")  {
@@ -413,6 +422,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
     const files = [...new Set(this._modifiedFiles)];
     if (files.length === 0) { return; }
+
+    // Proactively check for missing dependencies before execution
+    const missingPrompted = await this._checkFileDependencies(workdir, files);
+    if (missingPrompted) {
+      return; // Awaiting user decision on dependency installation
+    }
 
     const runCmd = this._detectRunCommand(files, workdir);
     if (!runCmd) { return; }
@@ -509,6 +524,60 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
 
   /* ---- Smart Dependency Detection ---- */
+  /**
+   * Proactively scan created/modified files for missing imported dependencies.
+   * If a missing package is detected, triggers the install popup and returns true.
+   */
+  private async _checkFileDependencies(workdir: string, files: string[]): Promise<boolean> {
+    for (const f of files) {
+      const ext = path.extname(f).toLowerCase();
+      const absPath = path.isAbsolute(f) ? f : path.join(workdir, f);
+      if (!fs.existsSync(absPath)) { continue; }
+
+      if (ext === ".py") {
+        let content = "";
+        try { content = fs.readFileSync(absPath, "utf-8"); } catch { continue; }
+
+        // Find all imported module names
+        const importRegex = /(?:^|\n)\s*(?:import|from)\s+([a-zA-Z0-9_]+)/g;
+        const matches = new Set<string>();
+        let match;
+        while ((match = importRegex.exec(content)) !== null) {
+          const mod = match[1];
+          if (!PYTHON_STDLIB.has(mod) && !fs.existsSync(path.join(workdir, mod + ".py")) && !fs.existsSync(path.join(workdir, mod))) {
+            matches.add(mod);
+          }
+        }
+
+        const venvPy = path.join(workdir, ".venv", "bin", "python3");
+        const venvExists = fs.existsSync(path.join(workdir, ".venv"));
+        const pyRunner = fs.existsSync(venvPy) ? ".venv/bin/python3" : "python3";
+
+        for (const mod of matches) {
+          let canImport = false;
+          try {
+            this._execSync(`${pyRunner} -c "import ${mod}"`, workdir, 3000);
+            canImport = true;
+          } catch {
+            canImport = false;
+          }
+
+          if (!canImport) {
+            const dep: MissingDep = {
+              name: mod,
+              type: "pylib",
+              installCmd: `pip install ${mod}`
+            };
+            const runCmd = this._detectRunCommand(files, workdir) || `python3 "${f}"`;
+            await this._promptInstallDep(dep, workdir, files, runCmd);
+            return true; // Prompted -> pause auto-run until user responds
+          }
+        }
+      }
+    }
+    return false;
+  }
+
 
   /**
    * Detect missing dependencies by re-running the command briefly to capture stderr.
