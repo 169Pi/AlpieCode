@@ -160,7 +160,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
   /* ---- Streaming ---- */
 
-  private _stream(task: string, image?: string) {
+  private _stream(task: string, image?: string, reasoningLevel?: "high" | "medium" | "low") {
     this._abort();
 
     if (!this._activeId) { this._newConv(task); }
@@ -189,7 +189,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
     this._abortStream = streamChat(
       url,
-      { task, workdir, sessionId: conv.sessionId, image },
+      { task, workdir, sessionId: conv.sessionId, image, reasoningLevel },
       (ev) => {
         if (ev.type === "start" && ev.data.session_id) {
           conv.sessionId = ev.data.session_id;
@@ -810,7 +810,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       case "sendMessage":
         this._autoFixRetries = 0; // reset retries on new user message
         this._post({ action: "userMessage", text: m.text, image: m.image });
-        this._stream(m.text, m.image);
+        this._stream(m.text, m.image, m.reasoningLevel);
         break;
       case "attachImage":
         this._pickImage();
@@ -1050,15 +1050,44 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         <button id="image-preview-remove" title="Remove image">\u2715</button>
       </div>
     </div>
+    <div id="slash-popup" class="slash-popup hidden">
+      <div id="slash-list" class="slash-list"></div>
+    </div>
     <div id="input-options">
-      <label id="thinking-toggle" title="Show thinking traces">
-        <input type="checkbox" id="thinking-check" checked>
-        <span>\ud83d\udcad Thinking</span>
-      </label>
+      <div id="reasoning-selector" class="reasoning-selector">
+        <button id="reasoning-btn" class="reasoning-btn" type="button" title="169Pi Model Reasoning Effort">
+          <span id="reasoning-icon">🧠</span>
+          <span id="reasoning-label">169Pi High</span>
+          <span class="reasoning-arrow">⌃</span>
+        </button>
+        <div id="reasoning-menu" class="reasoning-menu hidden">
+          <div class="reasoning-option active" data-level="high">
+            <span class="ro-icon">🧠</span>
+            <div class="ro-info">
+              <div class="ro-title">High (Default)</div>
+              <div class="ro-desc">Deep reasoning & maximal accuracy</div>
+            </div>
+          </div>
+          <div class="reasoning-option" data-level="medium">
+            <span class="ro-icon">⚖️</span>
+            <div class="ro-info">
+              <div class="ro-title">Medium</div>
+              <div class="ro-desc">Balanced speed and depth</div>
+            </div>
+          </div>
+          <div class="reasoning-option" data-level="low">
+            <span class="ro-icon">⚡</span>
+            <div class="ro-info">
+              <div class="ro-title">Low (Fast)</div>
+              <div class="ro-desc">Fast generation, direct code</div>
+            </div>
+          </div>
+        </div>
+      </div>
       <button id="attach-img-btn" title="Attach Image / Screenshot">\ud83d\udcce Image</button>
     </div>
     <div id="input-row">
-      <textarea id="user-input" placeholder="Ask AlpieCode anything..." rows="1"></textarea>
+      <textarea id="user-input" placeholder="Ask AlpieCode anything... (type / for commands)" rows="1"></textarea>
       <button id="send-btn" title="Send (Ctrl+Enter)">\u27a4</button>
       <button id="cancel-btn" title="Stop" class="hidden">\u25a0</button>
     </div>

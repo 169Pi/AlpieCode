@@ -27,6 +27,16 @@
   const thinkingCheck     = document.getElementById("thinking-check");
   const tokenBadge        = document.getElementById("token-badge");
   let lastTokenStats      = { tokPerSec: 0, tokenCount: 0, sessionTotal: 0 };
+
+  // Slash Commands DOM
+  const slashPopup        = document.getElementById("slash-popup");
+  const slashList         = document.getElementById("slash-list");
+
+  // Reasoning Selector DOM
+  const reasoningBtn      = document.getElementById("reasoning-btn");
+  const reasoningMenu     = document.getElementById("reasoning-menu");
+  const reasoningIcon     = document.getElementById("reasoning-icon");
+  const reasoningLabel    = document.getElementById("reasoning-label");
   const attachImgBtn      = document.getElementById("attach-img-btn");
   const imagePreviewBar   = document.getElementById("image-preview-bar");
   const imagePreviewThumb = document.getElementById("image-preview-thumb");
@@ -41,6 +51,166 @@
   let activeConversationId = null;
   let currentAttachedImage = null;
   let lastServerStatus = "";
+
+
+  // ---- Slash Commands Registry ----
+  const SLASH_COMMANDS = [
+    {
+      cmd: "/plan",
+      title: "plan",
+      desc: "Analyze codebase & generate an implementation plan without making changes",
+      icon: "📋",
+      prompt: "/plan "
+    },
+    {
+      cmd: "/explain",
+      title: "explain",
+      desc: "Explain a file, function, architecture, or codebase concept in detail",
+      icon: "💡",
+      prompt: "/explain "
+    },
+    {
+      cmd: "/doctor",
+      title: "doctor",
+      desc: "Run system diagnostic health checks (Python, CUDA, Compilers, Network)",
+      icon: "🩺",
+      prompt: "Run alpiecode doctor diagnostic checks and summarize results"
+    },
+    {
+      cmd: "/test",
+      title: "test",
+      desc: "Generate comprehensive unit tests and execute automated verification",
+      icon: "🧪",
+      prompt: "Generate unit tests for this project, run them in sandbox, and ensure all tests pass"
+    },
+    {
+      cmd: "/diff",
+      title: "diff",
+      desc: "Show recent changes made by AlpieCode since last checkpoint",
+      icon: "🔍",
+      prompt: "Show git diff of recent changes made in this session"
+    },
+    {
+      cmd: "/clear",
+      title: "clear",
+      desc: "Start a fresh, clean conversation session",
+      icon: "🗑️",
+      action: "clear"
+    }
+  ];
+
+  let activeSlashIndex = 0;
+  let currentFilteredCommands = [];
+  let currentReasoningLevel = "high";
+
+  try {
+    const saved = localStorage.getItem("alpiecode.reasoningLevel");
+    if (saved && (saved === "high" || saved === "medium" || saved === "low")) {
+      currentReasoningLevel = saved;
+    }
+  } catch(e) {}
+  updateReasoningUI(currentReasoningLevel);
+
+  // ---- Reasoning Level Dropdown ----
+  if (reasoningBtn && reasoningMenu) {
+    reasoningBtn.addEventListener("click", function(e) {
+      e.stopPropagation();
+      reasoningMenu.classList.toggle("hidden");
+    });
+
+    document.addEventListener("click", function(e) {
+      if (!reasoningBtn.contains(e.target) && !reasoningMenu.contains(e.target)) {
+        reasoningMenu.classList.add("hidden");
+      }
+    });
+
+    document.querySelectorAll(".reasoning-option").forEach(function(opt) {
+      opt.addEventListener("click", function() {
+        const level = opt.getAttribute("data-level");
+        if (level) {
+          currentReasoningLevel = level;
+          try { localStorage.setItem("alpiecode.reasoningLevel", level); } catch(e) {}
+          updateReasoningUI(level);
+          reasoningMenu.classList.add("hidden");
+        }
+      });
+    });
+  }
+
+  function updateReasoningUI(level) {
+    if (!reasoningIcon || !reasoningLabel) return;
+    const labels = {
+      high: { icon: "🧠", text: "169Pi High" },
+      medium: { icon: "⚖️", text: "169Pi Med" },
+      low: { icon: "⚡", text: "169Pi Low" }
+    };
+    const info = labels[level] || labels.high;
+    reasoningIcon.textContent = info.icon;
+    reasoningLabel.textContent = info.text;
+
+    document.querySelectorAll(".reasoning-option").forEach(function(opt) {
+      opt.classList.toggle("active", opt.getAttribute("data-level") === level);
+    });
+  }
+
+  // ---- Slash Commands Popup Logic ----
+  function checkSlashTrigger() {
+    const val = inputEl.value;
+    if (val.startsWith("/")) {
+      const query = val.slice(1).toLowerCase().trim();
+      currentFilteredCommands = SLASH_COMMANDS.filter(function(c) {
+        return c.cmd.slice(1).toLowerCase().startsWith(query) || c.title.toLowerCase().includes(query);
+      });
+
+      if (currentFilteredCommands.length > 0) {
+        activeSlashIndex = 0;
+        renderSlashPopup();
+        slashPopup.classList.remove("hidden");
+      } else {
+        hideSlashPopup();
+      }
+    } else {
+      hideSlashPopup();
+    }
+  }
+
+  function hideSlashPopup() {
+    if (slashPopup) slashPopup.classList.add("hidden");
+  }
+
+  function renderSlashPopup() {
+    if (!slashList) return;
+    slashList.innerHTML = "";
+
+    currentFilteredCommands.forEach(function(item, idx) {
+      const el = document.createElement("div");
+      el.className = "slash-item" + (idx === activeSlashIndex ? " active" : "");
+      el.innerHTML =
+        '<span class="slash-item-icon">' + item.icon + '</span>' +
+        '<div class="slash-item-info">' +
+        '  <span class="slash-item-cmd">' + item.cmd + '</span>' +
+        '  <span class="slash-item-desc">' + item.desc + '</span>' +
+        '</div>';
+
+      el.addEventListener("click", function() {
+        selectSlashCommand(item);
+      });
+
+      slashList.appendChild(el);
+    });
+  }
+
+  function selectSlashCommand(item) {
+    hideSlashPopup();
+    if (item.action === "clear") {
+      newChatBtn.click();
+      return;
+    }
+    inputEl.value = item.prompt || (item.cmd + " ");
+    inputEl.focus();
+    inputEl.style.height = "auto";
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 120) + "px";
+  }
 
   // ---- Initialize ----
   showWelcome();
@@ -89,6 +259,31 @@
   }
 
   inputEl.addEventListener("keydown", function(e) {
+    // Slash popup navigation
+    if (slashPopup && !slashPopup.classList.contains("hidden") && currentFilteredCommands.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        activeSlashIndex = (activeSlashIndex + 1) % currentFilteredCommands.length;
+        renderSlashPopup();
+        return;
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        activeSlashIndex = (activeSlashIndex - 1 + currentFilteredCommands.length) % currentFilteredCommands.length;
+        renderSlashPopup();
+        return;
+      } else if (e.key === "Enter" || e.key === "Tab") {
+        if (!e.ctrlKey && !e.metaKey && !e.shiftKey) {
+          e.preventDefault();
+          selectSlashCommand(currentFilteredCommands[activeSlashIndex]);
+          return;
+        }
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        hideSlashPopup();
+        return;
+      }
+    }
+
     if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
       sendMessage();
@@ -98,6 +293,7 @@
   inputEl.addEventListener("input", function() {
     inputEl.style.height = "auto";
     inputEl.style.height = Math.min(inputEl.scrollHeight, 120) + "px";
+    checkSlashTrigger();
   });
 
   // Clipboard paste (images)
@@ -223,7 +419,8 @@
     vscode.postMessage({
       action: "sendMessage",
       text: text || "Analyze this image",
-      image: imgToSend ? (imgToSend.path || imgToSend.dataUrl) : undefined
+      image: imgToSend ? (imgToSend.path || imgToSend.dataUrl) : undefined,
+      reasoningLevel: currentReasoningLevel
     });
 
     setStreaming(true);

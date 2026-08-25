@@ -73,6 +73,7 @@ export interface StreamOptions {
   workdir: string;
   sessionId?: string;
   image?: string;
+  reasoningLevel?: "high" | "medium" | "low";
 }
 
 /**
@@ -104,6 +105,7 @@ export function streamChat(
     };
     if (options.sessionId) { body.session_id = options.sessionId; }
     if (options.image) { body.image = options.image; }
+    if (options.reasoningLevel) { body.reasoning_level = options.reasoningLevel; }
 
     const payload = JSON.stringify(body);
 

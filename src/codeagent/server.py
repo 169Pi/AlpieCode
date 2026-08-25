@@ -140,13 +140,26 @@ if HAS_FASTAPI:
 
         event_queue = queue.Queue()
 
+        reasoning_level = str(body.get("reasoning_level", "high")).lower()
+        import copy
+        turn_cfg = copy.copy(app.state.cfg)
+        if reasoning_level == "low":
+            turn_cfg.enable_thinking = False
+            turn_cfg.temperature = 0.0
+        elif reasoning_level == "medium":
+            turn_cfg.enable_thinking = True
+            turn_cfg.temperature = 0.1
+        else:  # "high" default
+            turn_cfg.enable_thinking = True
+            turn_cfg.temperature = 0.2
+
         def producer():
             try:
                 orchestrator: AgentOrchestrator = app.state.orchestrator
                 for event in orchestrator.run_task(
                     session=session,
                     task=task,
-                    cfg=app.state.cfg,
+                    cfg=turn_cfg,
                     image_path=body.get("image"),
                     video_path=body.get("video"),
                     url=body.get("url"),
