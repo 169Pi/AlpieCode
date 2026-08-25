@@ -902,6 +902,18 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
   /* ---- Helpers ---- */
 
+  /** Push token speed and count to the webview header. */
+  private _pushTokenStats() {
+    const elapsed = (Date.now() - this._streamStartTime) / 1000;
+    const tokPerSec = elapsed > 0.1 ? Math.round(this._tokenCount / elapsed) : 0;
+    this._post({
+      action: "tokenStats",
+      tokPerSec,
+      tokenCount: this._tokenCount,
+      sessionTotal: this._sessionTokenTotal + this._tokenCount,
+    });
+  }
+
   private _post(m: any) { this._view?.webview.postMessage(m); }
 
   private _html(wv: vscode.Webview): string {

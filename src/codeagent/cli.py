@@ -29,7 +29,7 @@ def _show_banner():
 
 
 def _normalize_args():
-    known_commands = {"init", "serve", "run", "chat", "plan", "diff", "-h", "--help", "--version"}
+    known_commands = {"init", "serve", "run", "chat", "plan", "diff", "doctor", "explain", "-h", "--help", "--version"}
     subcommand = None
     
     # Check if a subcommand is present
@@ -42,7 +42,7 @@ def _normalize_args():
         subcommand = "run"
         sys.argv.insert(1, "run")
 
-    if subcommand in ("run", "plan") and len(sys.argv) > 2:
+    if subcommand in ("run", "plan", "explain") and len(sys.argv) > 2:
         cmd_idx = sys.argv.index(subcommand)
         sub_args = sys.argv[cmd_idx + 1:]
         
@@ -123,6 +123,10 @@ def main():
     if args.command == "init":
         interactive_init()
         return
+
+    if args.command == "doctor":
+        from .doctor import run_doctor
+        sys.exit(run_doctor())
 
     if args.command == "serve":
         _show_banner()
