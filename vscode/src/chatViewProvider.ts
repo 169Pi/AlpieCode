@@ -1029,6 +1029,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       <span id="status-text">Connecting\u2026</span>
     </div>
     <div id="header-right">
+      <span id="token-badge" class="token-badge" title="Generation speed and token usage">⚡ 0 tok/s · 📊 0</span>
       <button id="history-btn" title="Chat History">\ud83d\udccb</button>
       <button id="new-chat-btn" title="New Chat">\uff0b</button>
     </div>

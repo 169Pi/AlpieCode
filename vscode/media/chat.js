@@ -25,6 +25,8 @@
   const statusDot         = document.getElementById("status-dot");
   const statusText        = document.getElementById("status-text");
   const thinkingCheck     = document.getElementById("thinking-check");
+  const tokenBadge        = document.getElementById("token-badge");
+  let lastTokenStats      = { tokPerSec: 0, tokenCount: 0, sessionTotal: 0 };
   const attachImgBtn      = document.getElementById("attach-img-btn");
   const imagePreviewBar   = document.getElementById("image-preview-bar");
   const imagePreviewThumb = document.getElementById("image-preview-thumb");
@@ -517,7 +519,13 @@
 
   function finalizeAssistantMessage() {
     if (currentAssistantEl && currentAssistantText) {
-      currentAssistantEl.innerHTML = renderMarkdown(currentAssistantText);
+      var footer = "";
+      if (lastTokenStats.tokenCount > 0) {
+        var spd = lastTokenStats.tokPerSec > 0 ? lastTokenStats.tokPerSec + " tok/s" : "";
+        var tok = lastTokenStats.tokenCount + " tokens";
+        footer = '<div class="msg-token-footer">⚡ ' + (spd ? spd + ' · ' : '') + '📊 ' + tok + '</div>';
+      }
+      currentAssistantEl.innerHTML = renderMarkdown(currentAssistantText) + footer;
     }
     currentAssistantEl = null;
     currentAssistantText = "";

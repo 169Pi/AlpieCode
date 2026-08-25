@@ -2,7 +2,7 @@
   "name": "alpiecode",
   "displayName": "AlpieCode",
   "description": "AI coding agent powered by 169Pi \u2014 chat, multimodal vision, fix bugs, generate tests, sandbox execution",
-  "version": "0.8.2",
+  "version": "0.8.3",
   "publisher": "169pi",
   "license": "MIT",
   "engines": {
