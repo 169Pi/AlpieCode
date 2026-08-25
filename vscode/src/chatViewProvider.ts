@@ -1056,22 +1056,22 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     <div id="input-options">
       <div id="reasoning-selector" class="reasoning-selector">
         <button id="reasoning-btn" class="reasoning-btn" type="button" title="169Pi Model Reasoning Effort">
-          <span id="reasoning-icon">🧠</span>
-          <span id="reasoning-label">169Pi High</span>
+          <span id="reasoning-icon">⚖️</span>
+          <span id="reasoning-label">169Pi Med</span>
           <span class="reasoning-arrow">⌃</span>
         </button>
         <div id="reasoning-menu" class="reasoning-menu hidden">
-          <div class="reasoning-option active" data-level="high">
+          <div class="reasoning-option" data-level="high">
             <span class="ro-icon">🧠</span>
             <div class="ro-info">
-              <div class="ro-title">High (Default)</div>
+              <div class="ro-title">High</div>
               <div class="ro-desc">Deep reasoning & maximal accuracy</div>
             </div>
           </div>
-          <div class="reasoning-option" data-level="medium">
+          <div class="reasoning-option active" data-level="medium">
             <span class="ro-icon">⚖️</span>
             <div class="ro-info">
-              <div class="ro-title">Medium</div>
+              <div class="ro-title">Medium (Default)</div>
               <div class="ro-desc">Balanced speed and depth</div>
             </div>
           </div>

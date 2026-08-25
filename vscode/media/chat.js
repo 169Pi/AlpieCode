@@ -101,7 +101,7 @@
 
   let activeSlashIndex = 0;
   let currentFilteredCommands = [];
-  let currentReasoningLevel = "high";
+  let currentReasoningLevel = "medium";
 
   try {
     const saved = localStorage.getItem("alpiecode.reasoningLevel");
@@ -144,7 +144,7 @@
       medium: { icon: "⚖️", text: "169Pi Med" },
       low: { icon: "⚡", text: "169Pi Low" }
     };
-    const info = labels[level] || labels.high;
+    const info = labels[level] || labels.medium;
     reasoningIcon.textContent = info.icon;
     reasoningLabel.textContent = info.text;
 

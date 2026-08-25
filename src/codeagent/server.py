@@ -140,7 +140,7 @@ if HAS_FASTAPI:
 
         event_queue = queue.Queue()
 
-        reasoning_level = str(body.get("reasoning_level", "high")).lower()
+        reasoning_level = str(body.get("reasoning_level", "medium")).lower()
         import copy
         turn_cfg = copy.copy(app.state.cfg)
         if reasoning_level == "low":
