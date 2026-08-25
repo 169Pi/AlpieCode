@@ -445,32 +445,53 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     );
     task.presentationOptions = {
       reveal: vscode.TaskRevealKind.Always,
-      panel: vscode.TaskPanelKind.Shared,
-      focus: false,
+      panel: vscode.TaskPanelKind.Dedicated,
+      focus: true,
+      clear: true,
+      echo: true,
     };
+
+    this._post({
+      action: "agentEvent",
+      event: { type: "message", data: { content: "\n⚡ **Running in Terminal**: `" + runCmd + "`\n" } }
+    });
 
     const execution = await vscode.tasks.executeTask(task);
 
-    if (autoFix) {
-      const disposable = vscode.tasks.onDidEndTaskProcess((e) => {
-        if (e.execution === execution) {
-          disposable.dispose();
-          if (e.exitCode !== 0) {
-            // Smart dep detection: check for missing packages BEFORE auto-fix
-            this._detectMissingDep(workdir, files, runCmd).then(dep => {
-              if (dep) {
-                this._promptInstallDep(dep, workdir, files, runCmd);
-              } else {
-                this._autoFixError(workdir, files, runCmd, e.exitCode || 1);
-              }
-            });
-          } else {
-            this._autoFixRetries = 0; // reset on success
-            vscode.window.showInformationMessage("AlpieCode: Code executed successfully!");
-          }
+    const disposable = vscode.tasks.onDidEndTaskProcess((e) => {
+      if (e.execution === execution) {
+        disposable.dispose();
+        if (e.exitCode !== 0) {
+          // Smart dep detection: check for missing packages BEFORE auto-fix
+          this._detectMissingDep(workdir, files, runCmd).then(dep => {
+            if (dep) {
+              this._promptInstallDep(dep, workdir, files, runCmd);
+            } else if (autoFix) {
+              this._autoFixError(workdir, files, runCmd, e.exitCode || 1);
+            }
+          });
+        } else {
+          this._autoFixRetries = 0; // reset on success
+          // Capture and show stdout in chat output
+          try {
+            const out = this._execSync(runCmd, workdir, 8000);
+            if (out && out.trim()) {
+              this._post({
+                action: "agentEvent",
+                event: {
+                  type: "tool_result",
+                  data: {
+                    id: "terminal_output",
+                    output: "🚀 Output from: " + runCmd + "\n" + out.trim()
+                  }
+                }
+              });
+            }
+          } catch {}
+          vscode.window.showInformationMessage("AlpieCode: Code executed successfully!");
         }
-      });
-    }
+      }
+    });
   }
 
   private _autoFixError(workdir: string, files: string[], runCmd: string, exitCode: number) {
