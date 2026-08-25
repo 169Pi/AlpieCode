@@ -106,6 +106,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   /** Auto-fix retry counter to prevent infinite loops. */
   private _autoFixRetries = 0;
 
+  /** Token & Speed Meter state. */
+  private _tokenCount = 0;
+  private _streamStartTime = 0;
+  private _statsInterval?: ReturnType<typeof setInterval>;
+  private _sessionTokenTotal = 0;
+
   constructor(
     private readonly _extUri: vscode.Uri,
     private readonly _ctx: vscode.ExtensionContext
@@ -172,6 +178,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
     this._post({ action: "streamStart" });
 
+    // Token meter: reset counters
+    this._tokenCount = 0;
+    this._streamStartTime = Date.now();
+    if (this._statsInterval) { clearInterval(this._statsInterval); }
+    this._statsInterval = setInterval(() => this._pushTokenStats(), 500);
+
     let assistantBuf = "";
     this._modifiedFiles = [];
 
@@ -183,7 +195,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           conv.sessionId = ev.data.session_id;
         }
         if (ev.type === "message" || ev.type === "token") {
-          assistantBuf += ev.data.content || ev.data.text || "";
+          const chunk = ev.data.content || ev.data.text || "";
+          assistantBuf += chunk;
+          // Token meter: approximate token count (rough: ~4 chars per token)
+          this._tokenCount += Math.max(1, Math.ceil(chunk.length / 4));
         }
         if (ev.type === "tool_call") {
           this._handleToolCall(workdir, ev.data);
@@ -201,6 +216,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           conv.messages.push({ role: "assistant", content: assistantBuf, timestamp: Date.now() });
         }
         this._saveHistory();
+        // Token meter: stop interval, push final stats
+        if (this._statsInterval) { clearInterval(this._statsInterval); this._statsInterval = undefined; }
+        this._sessionTokenTotal += this._tokenCount;
+        this._pushTokenStats();
         this._post({ action: "streamEnd" });
         this._abortStream = undefined;
 

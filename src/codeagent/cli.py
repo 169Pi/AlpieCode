@@ -107,6 +107,13 @@ def main():
     # ── diff ──
     diff_p = sub.add_parser("diff", help="Show changes AlpieCode has made since last checkpoint", parents=[common])
 
+    # ── doctor ──
+    sub.add_parser("doctor", help="Run system health checks (CUDA, Python, network, dev tools)")
+
+    # ── explain ──
+    explain_p = sub.add_parser("explain", help="Explain a file, function, or codebase concept", parents=[common])
+    explain_p.add_argument("target", help="File path or concept to explain")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -175,6 +182,41 @@ def main():
         from .agent import run_agent
         run_agent(
             plan_task, Path(args.workdir), cfg, verbose=True,
+            image_path=args.image,
+            video_path=getattr(args, "video", None),
+            url=getattr(args, "url", None),
+            github_repo=getattr(args, "github", None),
+        )
+
+    elif args.command == "doctor":
+        from .doctor import run_doctor
+        sys.exit(run_doctor())
+
+    elif args.command == "explain":
+        _show_banner()
+        target = args.target
+        target_path = Path(args.workdir) / target if not Path(target).is_absolute() else Path(target)
+        if target_path.exists() and target_path.is_file():
+            content = target_path.read_text(encoding="utf-8", errors="replace")
+            explain_task = (
+                f"EXPLANATION ONLY — Do NOT make any file edits or run modifying commands.\n\n"
+                f"Please explain the file `{target}` in detail:\n"
+                f"1. Overview of its purpose and architecture role\n"
+                f"2. Key functions, classes, and internal logic\n"
+                f"3. Dependencies and connections to the rest of the project\n"
+                f"4. Step-by-step walkthrough of how it operates\n\n"
+                f"File content ({target}):\n```\n{content[:16000]}\n```"
+            )
+        else:
+            explain_task = (
+                f"EXPLANATION ONLY — Do NOT make any file edits.\n\n"
+                f"Explain the following codebase concept, architecture, or question in detail:\n"
+                f"Topic: {target}\n\n"
+                f"Use read_file, file_search, or list_files if needed to understand the codebase context."
+            )
+        from .agent import run_agent
+        run_agent(
+            explain_task, Path(args.workdir), cfg, verbose=True,
             image_path=args.image,
             video_path=getattr(args, "video", None),
             url=getattr(args, "url", None),

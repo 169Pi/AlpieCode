@@ -38,6 +38,7 @@
   let showThinking = thinkingCheck ? thinkingCheck.checked : true;
   let activeConversationId = null;
   let currentAttachedImage = null;
+  let lastServerStatus = "";
 
   // ---- Initialize ----
   showWelcome();
@@ -176,6 +177,9 @@
         break;
       case "changeRejected":
         appendSystemMessage("❌ Changes rejected.");
+        break;
+      case "tokenStats":
+        updateTokenStats(message);
         break;
     }
   });
