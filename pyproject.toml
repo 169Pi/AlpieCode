@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "alpiecode"
-version = "1.0.2"
+version = "1.0.3"
 description = "AlpieCode — Autonomous AI Coding Agent CLI powered by local 169Pi GGUF VLM"
 requires-python = ">=3.9"
 dependencies = [

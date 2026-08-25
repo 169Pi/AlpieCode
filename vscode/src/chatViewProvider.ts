@@ -10,6 +10,7 @@ import * as vscode from "vscode";
 import * as os from "os";
 import * as path from "path";
 import * as fs from "fs";
+import * as cp from "child_process";
 import { streamChat, checkHealth, AgentEvent } from "./sseClient";
 import { showDiffPreview } from "./diffHelper";
 
@@ -44,11 +45,47 @@ interface PendingChange {
   newStr?: string;
 }
 
+
+interface MissingDep {
+  name: string;
+  type: "global" | "pylib" | "npm";
+  installCmd: string;
+}
+
 /* ------------------------------------------------------------------ */
 /*  Constants                                                         */
 /* ------------------------------------------------------------------ */
 
 const MAX_AUTO_FIX_RETRIES = 3;
+
+/** Python standard library modules — never flag these as missing deps. */
+const PYTHON_STDLIB = new Set([
+  "abc", "argparse", "ast", "asyncio", "base64", "bisect", "calendar",
+  "codecs", "collections", "configparser", "contextlib", "copy", "csv",
+  "ctypes", "dataclasses", "datetime", "decimal", "difflib", "dis",
+  "email", "enum", "fileinput", "fnmatch", "fractions", "functools",
+  "gc", "getpass", "glob", "gzip", "hashlib", "heapq", "html", "http",
+  "importlib", "inspect", "io", "itertools", "json", "logging", "math",
+  "mimetypes", "multiprocessing", "operator", "os", "pathlib", "pickle",
+  "platform", "pprint", "profile", "pstats", "queue", "random", "re",
+  "readline", "secrets", "select", "shelve", "shlex", "shutil", "signal",
+  "socket", "sqlite3", "ssl", "statistics", "string", "struct",
+  "subprocess", "sys", "tempfile", "textwrap", "threading", "time",
+  "timeit", "tkinter", "traceback", "turtle", "types", "typing",
+  "unicodedata", "unittest", "urllib", "uuid", "warnings", "weakref",
+  "xml", "xmlrpc", "zipfile", "zipimport", "zlib",
+]);
+
+/** Map of common system commands to their apt package names. */
+const GLOBAL_INSTALL_MAP: Record<string, string> = {
+  python3: "python3", python: "python3", pip: "python3-pip", pip3: "python3-pip",
+  node: "nodejs", npm: "npm", npx: "npm",
+  gcc: "gcc", "g++": "g++", make: "make",
+  go: "golang-go", rustc: "rustc", cargo: "cargo",
+  java: "default-jdk", javac: "default-jdk",
+  git: "git", curl: "curl", wget: "wget",
+};
+
 
 /* ------------------------------------------------------------------ */
 /*  Provider                                                          */
@@ -385,7 +422,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         if (e.execution === execution) {
           disposable.dispose();
           if (e.exitCode !== 0) {
-            this._autoFixError(workdir, files, runCmd, e.exitCode || 1);
+            // Smart dep detection: check for missing packages BEFORE auto-fix
+            this._detectMissingDep(workdir, files, runCmd).then(dep => {
+              if (dep) {
+                this._promptInstallDep(dep, workdir, files, runCmd);
+              } else {
+                this._autoFixError(workdir, files, runCmd, e.exitCode || 1);
+              }
+            });
           } else {
             this._autoFixRetries = 0; // reset on success
             vscode.window.showInformationMessage("AlpieCode: Code executed successfully!");
@@ -443,6 +487,177 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       this._stream(fixPrompt);
     }, 1500);
   }
+
+
+  /* ---- Smart Dependency Detection ---- */
+
+  /**
+   * Detect missing dependencies by re-running the command briefly to capture stderr.
+   * Missing import errors happen instantly (before any side effects), so this is safe.
+   */
+  private async _detectMissingDep(
+    workdir: string, files: string[], runCmd: string
+  ): Promise<MissingDep | null> {
+    // 1. Check if the command binary itself is missing
+    const cmdBin = runCmd.split(/\s+/)[0].replace(/"/g, "");
+    try {
+      cp.execSync("which " + cmdBin, { timeout: 2000, stdio: "pipe" });
+    } catch {
+      const aptPkg = GLOBAL_INSTALL_MAP[cmdBin] || cmdBin;
+      return { name: cmdBin, type: "global", installCmd: "sudo apt install -y " + aptPkg };
+    }
+
+    // 2. Quick re-run to capture stderr (fails instantly on missing imports)
+    try {
+      const result = cp.execSync(runCmd, {
+        cwd: workdir, timeout: 8000, stdio: "pipe", encoding: "utf-8",
+      });
+      return null; // command succeeded — no missing dep
+    } catch (err: any) {
+      const output = (err.stderr || "") + "\n" + (err.stdout || "");
+
+      // Python: ModuleNotFoundError / ImportError
+      const pyMatch = output.match(/(?:ModuleNotFoundError|ImportError):\s*No module named\s*'([^']+)'/);
+      if (pyMatch) {
+        const modName = pyMatch[1].split(".")[0];
+        if (PYTHON_STDLIB.has(modName)) { return null; } // stdlib — not a missing dep
+        return { name: modName, type: "pylib", installCmd: "pip install " + modName };
+      }
+
+      // Node.js: Cannot find module
+      const nodeMatch = output.match(/Cannot find module '([^']+)'/);
+      if (nodeMatch) {
+        const pkg = nodeMatch[1];
+        if (pkg.startsWith(".") || pkg.startsWith("/")) { return null; } // local file
+        return { name: pkg, type: "npm", installCmd: "npm install " + pkg };
+      }
+
+      // C/C++: fatal error: X.h: No such file or directory
+      const cMatch = output.match(/fatal error:\s*(\S+\.h):\s*No such file or directory/);
+      if (cMatch) {
+        return { name: cMatch[1], type: "global", installCmd: "sudo apt install -y build-essential" };
+      }
+
+      return null; // no recognizable pattern
+    }
+  }
+
+  /**
+   * Show a VS Code popup asking the user whether to install a missing dependency.
+   * For Python libraries: also offers virtual environment creation.
+   */
+  private async _promptInstallDep(
+    dep: MissingDep, workdir: string, files: string[], runCmd: string
+  ) {
+    if (dep.type === "pylib") {
+      // Check if a venv already exists in the workdir
+      const venvPath = path.join(workdir, ".venv");
+      const venvExists = fs.existsSync(venvPath);
+
+      if (venvExists) {
+        // Venv exists — offer to install inside it
+        const choice = await vscode.window.showInformationMessage(
+          `📦 Python package '${dep.name}' is not installed. Install into .venv?`,
+          { modal: false },
+          "Install in .venv",
+          "Install Globally",
+          "Skip"
+        );
+        if (choice === "Install in .venv") {
+          const pipPath = path.join(".venv", "bin", "pip");
+          this._runInstallTask(pipPath + " install " + dep.name, workdir, files, runCmd);
+        } else if (choice === "Install Globally") {
+          this._runInstallTask("pip install " + dep.name, workdir, files, runCmd);
+        }
+        // else Skip → do nothing
+
+      } else {
+        // No venv — offer to create one
+        const choice = await vscode.window.showInformationMessage(
+          `📦 '${dep.name}' is not installed.\n🐍 No virtual environment found. Create one?`,
+          { modal: false },
+          "Create .venv & Install",
+          "Install Globally",
+          "Skip"
+        );
+        if (choice === "Create .venv & Install") {
+          const cmd = "python3 -m venv .venv && .venv/bin/pip install " + dep.name;
+          this._runInstallTask(cmd, workdir, files, runCmd);
+        } else if (choice === "Install Globally") {
+          this._runInstallTask("pip install " + dep.name, workdir, files, runCmd);
+        }
+      }
+
+    } else if (dep.type === "npm") {
+      const choice = await vscode.window.showInformationMessage(
+        `📦 Node package '${dep.name}' is not installed.`,
+        { modal: false },
+        "Install (npm install)",
+        "Skip"
+      );
+      if (choice === "Install (npm install)") {
+        this._runInstallTask("npm install " + dep.name, workdir, files, runCmd);
+      }
+
+    } else if (dep.type === "global") {
+      const choice = await vscode.window.showInformationMessage(
+        `⚠️ System tool '${dep.name}' is not installed.`,
+        { modal: false },
+        "Install (" + dep.installCmd + ")",
+        "Skip"
+      );
+      if (choice?.startsWith("Install")) {
+        this._runInstallTask(dep.installCmd, workdir, files, runCmd);
+      }
+    }
+  }
+
+  /**
+   * Run an install command in a VS Code terminal task.
+   * On success, automatically re-runs the original sandbox command.
+   */
+  private async _runInstallTask(
+    installCmd: string, workdir: string, files: string[], thenRunCmd: string
+  ) {
+    this._post({
+      action: "agentEvent",
+      event: { type: "message", data: { content: "\n📦 Installing: `" + installCmd + "`\n" } }
+    });
+
+    const installTask = new vscode.Task(
+      { type: "alpiecode-install" },
+      vscode.TaskScope.Workspace,
+      "AlpieCode Install",
+      "AlpieCode",
+      new vscode.ShellExecution(installCmd, { cwd: workdir })
+    );
+    installTask.presentationOptions = {
+      reveal: vscode.TaskRevealKind.Always,
+      panel: vscode.TaskPanelKind.Shared,
+      focus: true,
+    };
+
+    const execution = await vscode.tasks.executeTask(installTask);
+
+    const disposable = vscode.tasks.onDidEndTaskProcess((e) => {
+      if (e.execution === execution) {
+        disposable.dispose();
+        if (e.exitCode === 0) {
+          vscode.window.showInformationMessage("✅ Installation complete! Re-running code...");
+          this._post({
+            action: "agentEvent",
+            event: { type: "message", data: { content: "\n✅ Installation successful! Re-running...\n" } }
+          });
+          // Re-run the original sandbox command
+          this._modifiedFiles = [...files];
+          this._sandboxRun(workdir);
+        } else {
+          vscode.window.showErrorMessage("❌ Installation failed (exit code " + e.exitCode + "). Please install manually.");
+        }
+      }
+    });
+  }
+
 
   /* ---- Multimodal Image Picker ---- */
 
