@@ -18,11 +18,11 @@ CONFIG_DIR = Path.home() / ".alpiecode"
 CONFIG_PATH = CONFIG_DIR / "config.json"
 
 # Config version — bump this when defaults change to trigger auto-migration
-CONFIG_VERSION = 2  # v2: n_ctx upgraded 16384 → 32768
+CONFIG_VERSION = 3  # v3: endpoint updated to 18.223.193.170 & grpo_phase_4_merged
 
 DEFAULTS = {
-    "base_url": "http://20.245.200.125:8000/v1",  # Remote VLM server endpoint
-    "model": "169Pi/grpo_phase_2_merged",
+    "base_url": "http://18.223.193.170:8000/v1",  # Remote VLM server endpoint
+    "model": "169Pi/grpo_phase_4_merged",
     "model_repo": "169Pi/Alpie_learn_prototype_GGUF_NEW",
     "api_key": "not-needed",
     "hf_token": None,
@@ -84,7 +84,7 @@ def get_shared_http_client():
 @dataclass
 class Config:
     base_url: Optional[str] = None
-    model: str = "169Pi/grpo_phase_2_merged"          # Server API model name (vLLM)
+    model: str = "169Pi/grpo_phase_4_merged"          # Server API model name (vLLM)
     model_repo: str = "169Pi/Alpie_learn_prototype_GGUF_NEW"  # HuggingFace repo for offline GGUF
     api_key: str = "not-needed"
     hf_token: Optional[str] = None
@@ -111,6 +111,11 @@ def load_config() -> Config:
                 # v1 → v2: n_ctx was 16384, upgrade to 32768
                 if saved_data.get("n_ctx") == 16384:
                     data["n_ctx"] = 32768
+                # v2 → v3: endpoint update
+                if "20.245.200.125" in str(saved_data.get("base_url", "")):
+                    data["base_url"] = "http://18.223.193.170:8000/v1"
+                if "grpo_phase_2_merged" in str(saved_data.get("model", "")):
+                    data["model"] = "169Pi/grpo_phase_4_merged"
                 data["config_version"] = CONFIG_VERSION
                 needs_save = True
         except Exception:
