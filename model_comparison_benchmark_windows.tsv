@@ -1,0 +1,12 @@
+Metric	169Pi/Alpie_learn_prototype_GGUF_NEW	unsloth/Qwen3.5-9B-GGUF (Q4)	mistralai/Ministral-3-8B-Instruct-2512-GGUF (Q4)	ornith-ai/Ornith-1.0-9B-GGUF (Q4)	unsloth/GLM-4.6V-Flash-GGUF (Q4)
+Model	alpie-vl-text-q4_k_m.gguf	Qwen3.5-9B-Q4_K_M.gguf	Ministral-3-8B-Instruct-Q4_K_M.gguf	Ornith-1.0-9B-Q4_K_M.gguf	GLM-4.6V-Flash-Q4_K_M.gguf
+Parameters	8.95B	8.99B	8.06B	8.95B	9.10B
+Model size	5.24 GB	5.34 GB	4.85 GB	5.31 GB	5.46 GB
+Backend	Windows CPU (x86_64 AVX2)	Windows CPU (x86_64 AVX2)	Windows CPU (x86_64 AVX2)	Windows CPU (x86_64 AVX2)	Windows CPU (x86_64 AVX2)
+Context	4096	4096	4096	4096	4096
+Prompt tokens	512	512	512	512	512
+Generation tokens	128	128	128	128	128
+Peak Memory	5.96 GB peak	6.08 GB peak	5.42 GB peak	6.04 GB peak	6.18 GB peak
+TTFT	1.084 s	1.120 s	0.945 s	1.102 s	1.165 s
+Prompt tok/s	16.74	15.92	19.45	16.15	15.20
+Generation tok/s	1.86 - 2.04	1.98	2.38	1.92	1.81
