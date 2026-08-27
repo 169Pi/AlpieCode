@@ -11,8 +11,15 @@ and Google Colab via cell/line magic commands and rich interactive displays:
 """
 
 import sys
+import warnings
 from pathlib import Path
 from typing import Optional
+
+# Suppress noisy Jupyter / Python 3.12+ deprecation warnings (e.g. datetime.utcnow in jupyter_client)
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+warnings.filterwarnings("ignore", category=FutureWarning)
+warnings.filterwarnings("ignore", module="jupyter_client.*")
+warnings.filterwarnings("ignore", module="ipykernel.*")
 
 from .config import load_config
 from .agent import run_agent
@@ -40,6 +47,15 @@ def _display_html(html_str: str):
         display(HTML(html_str))
     except Exception:
         print(html_str)
+
+
+def _display_markdown(md_str: str):
+    """Render rich Markdown in Jupyter or Google Colab."""
+    try:
+        from IPython.display import Markdown, display
+        display(Markdown(md_str))
+    except Exception:
+        print(md_str)
 
 
 def alpie_magic(line: str, cell: Optional[str] = None):

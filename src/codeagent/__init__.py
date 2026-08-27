@@ -1,3 +1,8 @@
+import warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+warnings.filterwarnings("ignore", category=FutureWarning)
+warnings.filterwarnings("ignore", module="jupyter_client.*")
+
 """
 AlpieCode — Autonomous AI Coding Agent powered by local 169Pi GGUF VLM & Online API.
 

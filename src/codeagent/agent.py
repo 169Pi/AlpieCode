@@ -1,3 +1,8 @@
+import warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+warnings.filterwarnings("ignore", category=FutureWarning)
+warnings.filterwarnings("ignore", module="jupyter_client.*")
+
 """
 CLI agent wrapper and presentation adapter for AlpieCode.
 
