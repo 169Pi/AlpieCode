@@ -48,13 +48,16 @@ def _normalize_args():
         
         flags = []
         positionals = []
+        value_flags = {"--workdir", "--image", "--video", "--url", "--github", "--max-turns", "--complexity", "--host", "--port"}
         
         i = 0
         while i < len(sub_args):
             arg = sub_args[i]
             if arg.startswith("-"):
                 flags.append(arg)
-                if arg in ("--workdir", "--image", "--video", "--url", "--github", "--max-turns") and i + 1 < len(sub_args):
+                if "=" in arg:
+                    pass  # e.g. --complexity=low already contains its value
+                elif arg in value_flags and i + 1 < len(sub_args) and not sub_args[i + 1].startswith("-"):
                     flags.append(sub_args[i + 1])
                     i += 1
             else:
