@@ -152,14 +152,24 @@ def run_doctor() -> int:
 
     remote_ok, remote_msg = _check_remote_latency(cfg.base_url)
     if remote_ok:
-        print(f"     {_colorize('✅', 'green')} Remote VLM Endpoint: {cfg.base_url} — {remote_msg}")
+        print(f"     {_colorize('✅', 'green')} Primary Endpoint: {cfg.base_url} — {remote_msg}")
         print(f"     {_colorize('✅', 'green')} Model Target: {cfg.model}")
         passed_checks += 2
     else:
-        print(f"     {_colorize('⚠️ ', 'yellow')} Remote VLM Endpoint: {cfg.base_url} — {remote_msg}")
-        print(f"     {_colorize('ℹ️ ', 'blue')} Offline fallback ready with: {cfg.model_repo}")
+        print(f"     {_colorize('⚠️ ', 'yellow')} Primary Endpoint: {cfg.base_url} — {remote_msg}")
+        print(f"     {_colorize('ℹ️ ', 'blue')} Local fallback ready with: {cfg.model_repo}")
         passed_checks += 1
     total_checks += 2
+
+    failover_url = getattr(cfg, "failover_url", None)
+    if failover_url:
+        fo_ok, fo_msg = _check_remote_latency(failover_url)
+        if fo_ok:
+            print(f"     {_colorize('✅', 'green')} Failover Endpoint: {failover_url} — {fo_msg}")
+            passed_checks += 1
+        else:
+            print(f"     {_colorize('⚠️ ', 'yellow')} Failover Endpoint: {failover_url} — {fo_msg}")
+        total_checks += 1
 
     # 4. Development Compilers & Runtimes
     print()

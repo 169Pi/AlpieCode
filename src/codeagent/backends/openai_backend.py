@@ -1,63 +1,119 @@
 """
-OpenAI-compatible API inference backend.
+OpenAI-compatible API inference backend with smart model resolution & failover.
 """
 
 from typing import Any, List, Optional
-from openai import OpenAI
+from openai import OpenAI, NotFoundError
 
 from ..config import Config, get_shared_http_client, is_server_reachable
 from .base import ChatResponse, ToolCall
 
 
 class OpenAIBackend:
-    """Backend for remote OpenAI-compatible servers (vLLM, Ollama, etc.)."""
+    """Backend for remote OpenAI-compatible servers (vLLM, Ollama, etc.) with automatic failover."""
 
     def __init__(self, cfg: Config):
         self._cfg = cfg
         self._client: Optional[OpenAI] = None
+        self._resolved_model: Optional[str] = None
+        self._active_url: str = cfg.base_url or "http://20.245.200.125:8000/v1"
 
     @property
     def name(self) -> str:
-        return f"Online API ({self._cfg.base_url})"
+        return f"Online API ({self._active_url})"
 
     @property
     def is_available(self) -> bool:
-        return is_server_reachable(self._cfg.base_url)
+        if is_server_reachable(self._active_url):
+            return True
+        failover = getattr(self._cfg, "failover_url", None)
+        if failover and is_server_reachable(failover):
+            return True
+        return False
 
     @property
     def context_window(self) -> int:
         return 262_144
 
+    def _get_client(self, base_url: str) -> OpenAI:
+        return OpenAI(
+            base_url=base_url,
+            api_key=self._cfg.api_key or "not-needed",
+            http_client=get_shared_http_client(),
+        )
+
     def _ensure_client(self) -> OpenAI:
         if self._client is None:
-            self._client = OpenAI(
-                base_url=self._cfg.base_url,
-                api_key=self._cfg.api_key or "not-needed",
-                http_client=get_shared_http_client(),
-            )
+            self._client = self._get_client(self._active_url)
         return self._client
+
+    def _get_available_model(self, client: OpenAI) -> str:
+        if self._resolved_model:
+            return self._resolved_model
+        try:
+            models_list = client.models.list()
+            if models_list.data:
+                # If configured model is in the list, use it
+                for m in models_list.data:
+                    if m.id == self._cfg.model or getattr(m, "root", None) == self._cfg.model:
+                        self._resolved_model = m.id
+                        return self._resolved_model
+                # Otherwise use the first served model ID
+                self._resolved_model = models_list.data[0].id
+                return self._resolved_model
+        except Exception:
+            pass
+        return self._cfg.model
 
     def chat_completion(
         self,
         messages: List[dict],
         tools: Optional[List[dict]] = None,
-        temperature: float = 0.2,
-        max_tokens: int = 4096,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
         enable_thinking: bool = True,
     ) -> ChatResponse:
+        temp = temperature if temperature is not None else getattr(self._cfg, "temperature", 0.1)
+        m_tokens = max_tokens if max_tokens is not None else getattr(self._cfg, "max_tokens", 8192)
+
         client = self._ensure_client()
+        model_name = self._get_available_model(client)
+
         params = {
-            "model": self._cfg.model,
+            "model": model_name,
             "messages": messages,
-            "temperature": temperature,
-            "max_tokens": max_tokens,
+            "temperature": temp,
+            "max_tokens": m_tokens,
             "extra_body": {"chat_template_kwargs": {"enable_thinking": enable_thinking}},
         }
         if tools:
             params["tools"] = tools
             params["tool_choice"] = "auto"
 
-        resp = client.chat.completions.create(**params)
+        try:
+            resp = client.chat.completions.create(**params)
+        except NotFoundError:
+            # Model name mismatch -> re-discover model
+            self._resolved_model = None
+            model_name = self._get_available_model(client)
+            params["model"] = model_name
+            resp = client.chat.completions.create(**params)
+        except Exception as primary_err:
+            # Try failover endpoint if configured and distinct
+            failover = getattr(self._cfg, "failover_url", None)
+            if failover and failover != self._active_url and is_server_reachable(failover):
+                try:
+                    self._active_url = failover
+                    self._client = self._get_client(failover)
+                    self._resolved_model = None
+                    model_name = self._get_available_model(self._client)
+                    params["model"] = model_name
+                    resp = self._client.chat.completions.create(**params)
+                except Exception:
+                    raise primary_err
+            else:
+                raise primary_err
+
         msg = resp.choices[0].message
 
         tool_calls = None
@@ -69,7 +125,6 @@ class OpenAIBackend:
                     args = json.loads(tc.function.arguments or "{}")
                 except (json.JSONDecodeError, TypeError):
                     args = {}
-                # Defensive: ensure args is always a dict (model sometimes returns lists or strings)
                 if not isinstance(args, dict):
                     args = {}
                 tool_calls.append(

@@ -18,19 +18,20 @@ CONFIG_DIR = Path.home() / ".alpiecode"
 CONFIG_PATH = CONFIG_DIR / "config.json"
 
 # Config version — bump this when defaults change to trigger auto-migration
-CONFIG_VERSION = 3  # v3: endpoint updated to 18.223.193.170 & grpo_phase_4_merged
+CONFIG_VERSION = 4  # v4: Primary 20.245.200.125 + Failover try.169pi.com
 
 DEFAULTS = {
-    "base_url": "http://18.223.193.170:8000/v1",  # Remote VLM server endpoint
-    "model": "169Pi/grpo_phase_4_merged",
+    "base_url": "http://20.245.200.125:8000/v1",  # Primary endpoint
+    "failover_url": "https://try.169pi.com/v1",   # Failover endpoint
+    "model": "169Pi/grpo_phase_2_merged",
     "model_repo": "169Pi/Alpie_learn_prototype_GGUF_NEW",
     "api_key": "not-needed",
     "hf_token": None,
     "max_turns": 50,
-    "temperature": 0.2,
-    "max_tokens": 32768,
+    "temperature": 0.1,
+    "max_tokens": 8192,
     "enable_thinking": True,
-    "n_ctx": 32768,  # 32k context window (model supports up to 131k)
+    "n_ctx": 32768,  # 32k context window
     "n_gpu_layers": None,  # None = auto-detect GPU
     "config_version": CONFIG_VERSION,
 }
@@ -84,13 +85,14 @@ def get_shared_http_client():
 @dataclass
 class Config:
     base_url: Optional[str] = None
-    model: str = "169Pi/grpo_phase_4_merged"          # Server API model name (vLLM)
+    failover_url: Optional[str] = "https://try.169pi.com/v1"
+    model: str = "169Pi/grpo_phase_2_merged"          # Server API model name (vLLM)
     model_repo: str = "169Pi/Alpie_learn_prototype_GGUF_NEW"  # HuggingFace repo for offline GGUF
     api_key: str = "not-needed"
     hf_token: Optional[str] = None
     max_turns: int = 50
-    temperature: float = 0.2
-    max_tokens: int = 32768
+    temperature: float = 0.1
+    max_tokens: int = 8192
     enable_thinking: bool = True
     n_ctx: int = 32768
     n_gpu_layers: Optional[int] = None
@@ -111,11 +113,12 @@ def load_config() -> Config:
                 # v1 → v2: n_ctx was 16384, upgrade to 32768
                 if saved_data.get("n_ctx") == 16384:
                     data["n_ctx"] = 32768
-                # v2 → v3: endpoint update
-                if "20.245.200.125" in str(saved_data.get("base_url", "")):
-                    data["base_url"] = "http://18.223.193.170:8000/v1"
-                if "grpo_phase_2_merged" in str(saved_data.get("model", "")):
-                    data["model"] = "169Pi/grpo_phase_4_merged"
+                # v3 → v4: Primary 20.245.200.125 + Failover try.169pi.com
+                data["base_url"] = "http://20.245.200.125:8000/v1"
+                data["failover_url"] = "https://try.169pi.com/v1"
+                data["model"] = "169Pi/grpo_phase_2_merged"
+                data["temperature"] = 0.1
+                data["max_tokens"] = 8192
                 data["config_version"] = CONFIG_VERSION
                 needs_save = True
         except Exception:
