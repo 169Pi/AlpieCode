@@ -302,16 +302,45 @@ TOOLS = [
 # ── Tool implementations ──────────────────────────────────────────────
 
 def _build_venv_env(workdir: Path) -> dict:
-    """Build an environment dict with .venv/bin (or .venv/Scripts on Windows) prepended to PATH."""
+    """Build an environment dict with virtualenv bin prepended to PATH."""
+    import sys
     env = os.environ.copy()
-    venv_bin = workdir / ".venv" / ("Scripts" if os.name == "nt" else "bin")
-    if not venv_bin.is_dir():
-        venv_bin = workdir / ".venv" / ("bin" if os.name == "nt" else "Scripts")
-    if venv_bin.is_dir():
-        path_sep = ";" if os.name == "nt" else ":"
-        env["PATH"] = str(venv_bin) + path_sep + env.get("PATH", "")
-        env["VIRTUAL_ENV"] = str(workdir / ".venv")
-        env.pop("PYTHONHOME", None)
+    path_sep = ";" if os.name == "nt" else ":"
+
+    # 1. Check if workdir has its own .venv
+    venv_dir = workdir / ".venv"
+    # 2. Otherwise fallback to active virtualenv from sys.prefix
+    if not venv_dir.is_dir() and sys.prefix != getattr(sys, "base_prefix", sys.prefix):
+        venv_dir = Path(sys.prefix)
+
+    all_paths = []
+    if venv_dir.is_dir():
+        bin_dir = venv_dir / ("Scripts" if os.name == "nt" else "bin")
+        if not bin_dir.is_dir():
+            bin_dir = venv_dir / ("bin" if os.name == "nt" else "Scripts")
+        if bin_dir.is_dir():
+            all_paths.append(str(bin_dir))
+            env["VIRTUAL_ENV"] = str(venv_dir)
+            env.pop("PYTHONHOME", None)
+
+    # Include user tools (uv, local bin, cargo)
+    user_home = Path.home()
+    extra_paths = [
+        str(user_home / ".local" / "bin"),
+        str(user_home / ".cargo" / "bin"),
+        "/usr/local/bin",
+        "/usr/bin",
+        "/bin",
+    ]
+    for p in extra_paths:
+        if p not in all_paths and os.path.exists(p):
+            all_paths.append(p)
+
+    current_path = env.get("PATH", "")
+    if current_path:
+        all_paths.append(current_path)
+
+    env["PATH"] = path_sep.join(all_paths)
     return env
 
 
@@ -383,6 +412,15 @@ def _bash(workdir: Path, command: str) -> str:
     try:
         import shutil
         env = _build_venv_env(workdir)
+
+        # Auto-translate pip install -> uv pip install if pip binary is absent but uv is available
+        if "pip install" in command or "pip3 install" in command:
+            has_pip = shutil.which("pip", path=env.get("PATH")) or shutil.which("pip3", path=env.get("PATH"))
+            if not has_pip:
+                uv_bin = shutil.which("uv", path=env.get("PATH")) or shutil.which("uv")
+                if uv_bin:
+                    command = re.sub(r"(?:[^\s;&|]*/)?(?:python3?|py)(?:\.exe)?\s+-m\s+pip3?\s+install\b", f"{uv_bin} pip install", command)
+                    command = re.sub(r"(?:[^\s;&|]*/)?pip3?\s+install\b", f"{uv_bin} pip install", command)
 
         # Cross-platform shell resolution
         if shutil.which("bash"):

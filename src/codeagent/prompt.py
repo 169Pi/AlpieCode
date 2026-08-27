@@ -148,6 +148,12 @@ NEVER write partial code. Write it ALL in one go.
 - bash for running code, compiling, testing
 - Do NOT use bash just to list files or explore — start coding instead
 
+## Testing Web Servers & REST APIs — CRITICAL
+- For FastAPI or Flask APIs, ALWAYS test endpoints using in-process test clients:
+  - FastAPI: `from fastapi.testclient import TestClient; client = TestClient(app); res = client.get('/api/items')`
+  - Flask: `client = app.test_client(); res = client.get('/api/items')`
+- NEVER start background servers with `&`, `sleep`, or `curl`. TestClient runs in 0.05s and tests all routes without daemon processes!
+
 ## Safety
 - Never commit, push, or open pull requests unless asked
 - Never write secrets, API keys, or tokens into files
@@ -214,6 +220,12 @@ For multi-file projects, build in dependency order:
 - Use file_search to find specific code patterns
 - Use web_search only when you genuinely need external documentation
 - bash for running, compiling, testing
+
+## Testing Web Servers & REST APIs — CRITICAL
+- For FastAPI or Flask APIs, ALWAYS test endpoints using in-process test clients:
+  - FastAPI: `from fastapi.testclient import TestClient; client = TestClient(app); res = client.get('/api/items')`
+  - Flask: `client = app.test_client(); res = client.get('/api/items')`
+- NEVER start background servers with `&`, `sleep`, or `curl`. TestClient runs in 0.05s and tests all routes without daemon processes!
 
 ## Diagnosing Failures
 1. Read the full error output carefully
