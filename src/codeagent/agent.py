@@ -208,14 +208,13 @@ def run_agent(
                     console.print(f"📺 URL: {url}", style="cyan")
                 console.print(f"📂 Workdir: {workdir}", style="dim")
                 if not data["is_offline"]:
-                    console.print(f"🌐 Mode: [bold green]ONLINE[/bold green] (Server: {cfg.base_url})", style="dim")
-                    console.print(f"🤖 Model: {cfg.model}", style="dim")
+                    console.print(f"🌐 Mode: [bold green]ONLINE[/bold green]", style="dim")
+                    console.print(f"🤖 Model: [bold cyan]alpie_9b[/bold cyan]", style="dim")
                 else:
-                    console.print(f"🧠 Mode: [bold yellow]OFFLINE[/bold yellow] (Local GGUF GPU Engine)", style="dim")
-                    console.print(f"🧠 Local Model: {cfg.model_repo}", style="dim")
-                    console.print(f"⚡ Context Window: {cfg.n_ctx} tokens", style="dim")
-                console.print(f"🧠 Reasoning: {'ON' if cfg.enable_thinking else 'OFF'}", style="dim")
-                console.print(f"🔧 Tools: {data['tool_count']} available", style="dim")
+                    console.print(f"🧠 Mode: [bold yellow]OFFLINE[/bold yellow]", style="dim")
+                    console.print(f"🤖 Model: [bold cyan]alpie_9b (Local GGUF)[/bold cyan]", style="dim")
+                if cfg.enable_thinking:
+                    console.print(f"🧠 Reasoning: [bold green]ON[/bold green]", style="dim")
             else:
                 console.rule("Agent Started")
                 console.print(f"📋 Task: {task.splitlines()[0]}")
@@ -294,12 +293,12 @@ def run_chat(workdir: Path, cfg: Config, verbose: bool = True) -> None:
 
     if HAS_RICH:
         console.print()
+        mode_line = "🌐 Mode: [bold green]ONLINE[/bold green]\n🤖 Model: [bold cyan]alpie_9b[/bold cyan]" if not is_offline else "🧠 Mode: [bold yellow]OFFLINE[/bold yellow]\n🤖 Model: [bold cyan]alpie_9b (Local GGUF)[/bold cyan]"
         console.print(
             Panel(
-                "[bold cyan]AlpieCode[/bold cyan] interactive mode\n"
+                f"[bold cyan]AlpieCode[/bold cyan] interactive mode\n"
                 f"📂 Working in: [cyan]{workdir}[/cyan]\n"
-                + (f"🌐 Mode: [bold green]ONLINE[/bold green] (Server: {cfg.base_url})\n" if not is_offline else "🧠 Mode: [bold yellow]OFFLINE[/bold yellow] (Local GGUF Engine)\n")
-                + f"🔧 Tools: [cyan]{len(active_tools)} available[/cyan]\n\n"
+                f"{mode_line}\n\n"
                 "Type your request, or [bold red]exit[/bold red] / [bold red]quit[/bold red] to stop.",
                 title="💬 Chat Mode",
                 border_style="blue",

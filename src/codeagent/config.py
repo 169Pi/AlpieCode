@@ -18,18 +18,18 @@ CONFIG_DIR = Path.home() / ".alpiecode"
 CONFIG_PATH = CONFIG_DIR / "config.json"
 
 # Config version — bump this when defaults change to trigger auto-migration
-CONFIG_VERSION = 4  # v4: Primary 20.245.200.125, smart model auto-discovery
+CONFIG_VERSION = 5  # v5: model alpie_9b, reasoning OFF by default, clean display
 
 DEFAULTS = {
     "base_url": "http://20.245.200.125:8000/v1",  # Primary endpoint
-    "model": "169Pi/grpo_phase_2_merged",
+    "model": "alpie_9b",
     "model_repo": "169Pi/Alpie_learn_prototype_GGUF_NEW",
     "api_key": "not-needed",
     "hf_token": None,
     "max_turns": 50,
     "temperature": 0.1,
     "max_tokens": 8192,
-    "enable_thinking": True,
+    "enable_thinking": False,  # Reasoning OFF by default
     "n_ctx": 32768,  # 32k context window
     "n_gpu_layers": None,  # None = auto-detect GPU
     "config_version": CONFIG_VERSION,
@@ -84,14 +84,14 @@ def get_shared_http_client():
 @dataclass
 class Config:
     base_url: Optional[str] = None
-    model: str = "169Pi/grpo_phase_2_merged"          # Server API model name (vLLM)
+    model: str = "alpie_9b"          # Server API model name (vLLM)
     model_repo: str = "169Pi/Alpie_learn_prototype_GGUF_NEW"  # HuggingFace repo for offline GGUF
     api_key: str = "not-needed"
     hf_token: Optional[str] = None
     max_turns: int = 50
     temperature: float = 0.1
     max_tokens: int = 8192
-    enable_thinking: bool = True
+    enable_thinking: bool = False
     n_ctx: int = 32768
     n_gpu_layers: Optional[int] = None
 
@@ -111,9 +111,10 @@ def load_config() -> Config:
                 # v1 → v2: n_ctx was 16384, upgrade to 32768
                 if saved_data.get("n_ctx") == 16384:
                     data["n_ctx"] = 32768
-                # v3 → v4: Primary 20.245.200.125, smart model auto-discovery
+                # v4 → v5: model alpie_9b, reasoning OFF default
                 data["base_url"] = "http://20.245.200.125:8000/v1"
-                data["model"] = "169Pi/grpo_phase_2_merged"
+                data["model"] = "alpie_9b"
+                data["enable_thinking"] = False
                 data["temperature"] = 0.1
                 data["max_tokens"] = 8192
                 data["config_version"] = CONFIG_VERSION
