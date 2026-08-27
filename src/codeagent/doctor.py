@@ -161,15 +161,6 @@ def run_doctor() -> int:
         passed_checks += 1
     total_checks += 2
 
-    failover_url = getattr(cfg, "failover_url", None)
-    if failover_url:
-        fo_ok, fo_msg = _check_remote_latency(failover_url)
-        if fo_ok:
-            print(f"     {_colorize('✅', 'green')} Failover Endpoint: {failover_url} — {fo_msg}")
-            passed_checks += 1
-        else:
-            print(f"     {_colorize('⚠️ ', 'yellow')} Failover Endpoint: {failover_url} — {fo_msg}")
-        total_checks += 1
 
     # 4. Development Compilers & Runtimes
     print()

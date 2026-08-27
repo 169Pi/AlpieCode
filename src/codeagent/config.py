@@ -18,11 +18,10 @@ CONFIG_DIR = Path.home() / ".alpiecode"
 CONFIG_PATH = CONFIG_DIR / "config.json"
 
 # Config version — bump this when defaults change to trigger auto-migration
-CONFIG_VERSION = 4  # v4: Primary 20.245.200.125 + Failover try.169pi.com
+CONFIG_VERSION = 4  # v4: Primary 20.245.200.125, smart model auto-discovery
 
 DEFAULTS = {
     "base_url": "http://20.245.200.125:8000/v1",  # Primary endpoint
-    "failover_url": "https://try.169pi.com/v1",   # Failover endpoint
     "model": "169Pi/grpo_phase_2_merged",
     "model_repo": "169Pi/Alpie_learn_prototype_GGUF_NEW",
     "api_key": "not-needed",
@@ -85,7 +84,6 @@ def get_shared_http_client():
 @dataclass
 class Config:
     base_url: Optional[str] = None
-    failover_url: Optional[str] = "https://try.169pi.com/v1"
     model: str = "169Pi/grpo_phase_2_merged"          # Server API model name (vLLM)
     model_repo: str = "169Pi/Alpie_learn_prototype_GGUF_NEW"  # HuggingFace repo for offline GGUF
     api_key: str = "not-needed"
@@ -113,9 +111,8 @@ def load_config() -> Config:
                 # v1 → v2: n_ctx was 16384, upgrade to 32768
                 if saved_data.get("n_ctx") == 16384:
                     data["n_ctx"] = 32768
-                # v3 → v4: Primary 20.245.200.125 + Failover try.169pi.com
+                # v3 → v4: Primary 20.245.200.125, smart model auto-discovery
                 data["base_url"] = "http://20.245.200.125:8000/v1"
-                data["failover_url"] = "https://try.169pi.com/v1"
                 data["model"] = "169Pi/grpo_phase_2_merged"
                 data["temperature"] = 0.1
                 data["max_tokens"] = 8192

@@ -30,19 +30,13 @@ class AgentEvent:
 
 
 def resolve_backend(cfg: Config, timeout: float = 2.0) -> InferenceBackend:
-    """Resolve backend: Primary online API -> Failover online API -> Local GGUF.
+    """Resolve online vs offline backend based on server reachability.
 
     Uses a generous timeout at startup (2s default) to avoid false negatives
-    when the remote API is slow to respond.
+    when the remote API is slow to respond (e.g. Azure VM cold start).
     """
     if is_server_reachable(cfg.base_url, timeout=timeout):
         return OpenAIBackend(cfg)
-    failover = getattr(cfg, "failover_url", None)
-    if failover and is_server_reachable(failover, timeout=timeout):
-        import copy
-        failover_cfg = copy.copy(cfg)
-        failover_cfg.base_url = failover
-        return OpenAIBackend(failover_cfg)
     return LocalBackend(cfg)
 
 
