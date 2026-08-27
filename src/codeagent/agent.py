@@ -155,6 +155,7 @@ def run_agent(
     url: str = None,
     github_repo: str = None,
     server_url: str = None,
+    complexity: str = None,
 ) -> list:
     """Run non-interactive agent task with Rich presentation."""
     workdir = workdir.resolve()
@@ -178,6 +179,7 @@ def run_agent(
             video_path=video_path,
             url=url,
             github_repo=github_repo,
+            complexity=complexity,
         )
     else:
         backend = resolve_backend(cfg)
@@ -192,6 +194,7 @@ def run_agent(
             video_path=video_path,
             url=url,
             github_repo=github_repo,
+            complexity=complexity,
         )
 
     _checkpoint(workdir, "checkpoint: start")
@@ -214,10 +217,12 @@ def run_agent(
                 console.print(f"📂 Workdir: {workdir}", style="dim")
                 if not data["is_offline"]:
                     console.print(f"🌐 Mode: [bold green]ONLINE[/bold green]", style="dim")
-                    console.print(f"🤖 Model: [bold cyan]alpie_9b[/bold cyan]", style="dim")
                 else:
                     console.print(f"🧠 Mode: [bold yellow]OFFLINE[/bold yellow]", style="dim")
-                    console.print(f"🤖 Model: [bold cyan]alpie_9b (Local GGUF)[/bold cyan]", style="dim")
+                comp = data.get("complexity", "low")
+                comp_label = {"qa": "Q&A (instant)", "low": "Low (fast)", "medium": "Medium (balanced)", "high": "High (thorough)"}.get(comp, comp)
+                comp_color = {"qa": "cyan", "low": "green", "medium": "yellow", "high": "red"}.get(comp, "white")
+                console.print(f"⚡ Complexity: [bold {comp_color}]{comp_label}[/bold {comp_color}]", style="dim")
                 if cfg.enable_thinking:
                     console.print(f"🧠 Reasoning: [bold green]ON[/bold green]", style="dim")
             else:
@@ -238,6 +243,10 @@ def run_agent(
 
         elif event.type == "compaction" and verbose:
             console.print("🗜️  Compacting context (approaching token limit)...", style="yellow")
+
+        elif event.type == "wrap_up" and verbose:
+            if HAS_RICH:
+                console.print(f"⏳ [bold yellow]Wrap-up: {event.data['remaining']} turns remaining[/bold yellow]", style="yellow")
 
         elif event.type == "thinking" and verbose:
             _print_reasoning(event.data["content"])

@@ -18,7 +18,7 @@ CONFIG_DIR = Path.home() / ".alpiecode"
 CONFIG_PATH = CONFIG_DIR / "config.json"
 
 # Config version — bump this when defaults change to trigger auto-migration
-CONFIG_VERSION = 5  # v5: model alpie_9b, reasoning OFF by default, clean display
+CONFIG_VERSION = 6  # v6: smart flow, max_turns 20, complexity-aware
 
 DEFAULTS = {
     "base_url": "http://20.245.200.125:8000/v1",  # Primary endpoint
@@ -26,7 +26,7 @@ DEFAULTS = {
     "model_repo": "169Pi/Alpie_learn_prototype_GGUF_NEW",
     "api_key": "not-needed",
     "hf_token": None,
-    "max_turns": 50,
+    "max_turns": 20,
     "temperature": 0.1,
     "max_tokens": 8192,
     "enable_thinking": False,  # Reasoning OFF by default
@@ -88,7 +88,7 @@ class Config:
     model_repo: str = "169Pi/Alpie_learn_prototype_GGUF_NEW"  # HuggingFace repo for offline GGUF
     api_key: str = "not-needed"
     hf_token: Optional[str] = None
-    max_turns: int = 50
+    max_turns: int = 20
     temperature: float = 0.1
     max_tokens: int = 8192
     enable_thinking: bool = False
@@ -111,12 +111,13 @@ def load_config() -> Config:
                 # v1 → v2: n_ctx was 16384, upgrade to 32768
                 if saved_data.get("n_ctx") == 16384:
                     data["n_ctx"] = 32768
-                # v4 → v5: model alpie_9b, reasoning OFF default
+                # v5 → v6: smart flow, max_turns 20
                 data["base_url"] = "http://20.245.200.125:8000/v1"
                 data["model"] = "alpie_9b"
                 data["enable_thinking"] = False
                 data["temperature"] = 0.1
                 data["max_tokens"] = 8192
+                data["max_turns"] = 20
                 data["config_version"] = CONFIG_VERSION
                 needs_save = True
         except Exception:

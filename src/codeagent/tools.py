@@ -397,7 +397,9 @@ def _bash(workdir: Path, command: str) -> str:
 
         result = subprocess.run(
             shell_cmd,
-            cwd=workdir, capture_output=True, text=True, timeout=300, env=env,
+            cwd=workdir, capture_output=True, text=True,
+            stdin=subprocess.DEVNULL,
+            timeout=30, env=env,
         )
 
         stdout = _smart_truncate(result.stdout, 6000)

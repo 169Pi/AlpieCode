@@ -73,6 +73,7 @@ class AlpieCodeClient:
         video_path: Optional[str] = None,
         url: Optional[str] = None,
         github_repo: Optional[str] = None,
+        complexity: Optional[str] = None,
     ) -> Iterator[AgentEvent]:
         """
         Stream agent events from POST /chat using Server-Sent Events (SSE).

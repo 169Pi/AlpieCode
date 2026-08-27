@@ -141,15 +141,19 @@ if HAS_FASTAPI:
         event_queue = queue.Queue()
 
         reasoning_level = str(body.get("reasoning_level", "medium")).lower()
+        complexity = str(body.get("complexity", reasoning_level)).lower()
+        # Normalize complexity
+        if complexity not in ("low", "medium", "high"):
+            complexity = "medium"
         import copy
         turn_cfg = copy.copy(app.state.cfg)
-        if reasoning_level == "low":
+        if complexity == "low":
             turn_cfg.enable_thinking = False
             turn_cfg.temperature = 0.0
-        elif reasoning_level == "medium":
-            turn_cfg.enable_thinking = True
+        elif complexity == "medium":
+            turn_cfg.enable_thinking = False
             turn_cfg.temperature = 0.1
-        else:  # "high" default
+        else:  # "high"
             turn_cfg.enable_thinking = True
             turn_cfg.temperature = 0.2
 
@@ -164,6 +168,7 @@ if HAS_FASTAPI:
                     video_path=body.get("video"),
                     url=body.get("url"),
                     github_repo=body.get("github"),
+                    complexity=complexity,
                 ):
                     event_queue.put(event)
             finally:
