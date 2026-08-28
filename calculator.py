@@ -41,7 +41,7 @@ def calculate(expression):
     # Replace ** with a temporary placeholder for safe evaluation
     temp = expression.replace('**', '\x00POWER\x00')
     
-    # Check for invalid characters
+    # Check for invalid characters (allow digits, spaces, +, -, *, /, (, ), ., and ** placeholder)
     if not re.match(r'^[\d\s\+\-\*\/\(\)\.\x00]+$', temp):
         raise ValueError("Invalid characters in expression")
     
