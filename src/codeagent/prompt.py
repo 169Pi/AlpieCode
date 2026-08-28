@@ -359,6 +359,89 @@ COMPLEXITY_CONFIG = {
 }
 
 
+
+
+# -- Shell-Aware Prompt Fragments ------------------------------------------
+
+BASH_RULES = """\
+## Shell Environment: Bash (Linux/macOS)
+- You are ALREADY in the project root directory. NEVER run `cd /home/...` or `cd /testbed`
+- Use `&&` to chain commands
+- Use `export VAR=value` for environment variables
+- Use `python3` (not `python` which may be Python 2)
+- For testing python code without extra packages, use `python3 -m unittest`
+- Background processes: `command &` (but AVOID for servers -- use TestClient)
+- File paths use `/` forward slashes
+"""
+
+WSL_RULES = """\
+## Shell Environment: WSL Bash (Windows Subsystem for Linux)
+- You are ALREADY in the project root directory. NEVER run `cd /home/...` or `cd /testbed`
+- Use bash syntax: `&&` to chain, `export VAR=value` for env vars
+- Use `python3` (not `python`)
+- For testing python code, use `python3 -m unittest`
+- The working directory is a Linux path (e.g. /home/user/project)
+- Do NOT use PowerShell or Windows commands (no `dir`, `type`, `$env:`)
+- File paths use `/` forward slashes
+- Network: `localhost` in WSL may differ from Windows -- use `127.0.0.1`
+"""
+
+POWERSHELL_RULES = """\
+## Shell Environment: PowerShell (Windows)
+- Use `;` to chain commands, NOT `&&` (PowerShell does not support `&&`)
+- Use `$env:VAR = "value"` for environment variables, NOT `export VAR=value`
+- Use `python` (not `python3`)
+- Do NOT use `echo -e` or ANSI escapes -- use `Write-Output`
+- Do NOT use `grep` -- use `Select-String` or `findstr`
+- Do NOT use `&` for background processes -- they will fail
+- File paths use `\\` but `/` also works in most cases
+- Do NOT use `curl` -- use `Invoke-WebRequest` or Python's requests/httpx
+"""
+
+REPO_CONTEXT_TEMPLATE = """\
+## Current Project Context
+- Project type: {project_type}
+- Frameworks: {frameworks}
+- Tracked files: {file_count}
+- Entry points: {entry_points}
+- Has tests: {has_tests}
+{extra}"""
+
+INTENT_CREATE = """\
+## Task Intent: Create New Code
+- Write the COMPLETE, WORKING code on Turn 1 using write_file
+- Do NOT explore the filesystem first -- start coding immediately
+- Include ALL imports, ALL functions, ALL logic -- no stubs, no TODOs
+- After writing, run with bash to verify
+- Fix any errors with edit_file, then re-run
+- When everything works: DONE: <summary>
+"""
+
+INTENT_MODIFY = """\
+## Task Intent: Modify Existing Code
+- Turn 1: Use read_file to read the relevant file(s)
+- Turn 2: Use edit_file to make targeted changes
+- Turn 3: Use bash to test the changes
+- Fix any regressions, then: DONE: <summary>
+"""
+
+INTENT_DEBUG = """\
+## Task Intent: Debug / Investigate
+- Turn 1: Reproduce the issue -- run the failing command/test
+- Turn 2: Read error output carefully, use read_file to examine source
+- Turn 3: Fix the root cause with edit_file (not the symptom)
+- Turn 4: Re-run to verify the fix
+- DONE: <summary of what was wrong and how it was fixed>
+"""
+
+INTENT_EXPLAIN = """\
+## Task Intent: Explain / Analyze
+- Read the relevant file(s) with read_file
+- Provide a clear, structured explanation
+- Do NOT modify any files unless explicitly asked
+- DONE: <explanation>
+"""
+
 class PromptBuilder:
     """Constructs system prompts and user content."""
 
@@ -367,13 +450,56 @@ class PromptBuilder:
         workdir: Path,
         is_offline: bool = False,
         complexity: str = "low",
+        task_context=None,
     ) -> str:
+        """Build system prompt, optionally enhanced with TaskContext discovery."""
         if is_offline:
             prompt = OFFLINE_SYSTEM_PROMPT
         elif complexity == "high":
             prompt = SYSTEM_PROMPT_HIGH
         else:
             prompt = SYSTEM_PROMPT
+
+        # -- Inject shell-aware rules from TaskContext --
+        if task_context is not None:
+            shell = getattr(task_context, "shell", "bash")
+            if shell == "powershell":
+                prompt += "\n\n" + POWERSHELL_RULES
+            elif shell == "wsl":
+                prompt += "\n\n" + WSL_RULES
+            elif shell == "bash":
+                prompt += "\n\n" + BASH_RULES
+
+            # Inject repo context (if not an empty dir)
+            if getattr(task_context, "project_type", "empty") != "empty":
+                frameworks_str = ", ".join(task_context.frameworks) if task_context.frameworks else "none detected"
+                entry_str = ", ".join(task_context.entry_points) if task_context.entry_points else "none found"
+                extra_lines = []
+                if task_context.has_venv:
+                    extra_lines.append("- Virtual environment: detected (.venv)")
+                if task_context.dependencies:
+                    extra_lines.append(f"- Key dependencies: {', '.join(task_context.dependencies[:8])}")
+                extra = "\n".join(extra_lines)
+                prompt += "\n\n" + REPO_CONTEXT_TEMPLATE.format(
+                    project_type=task_context.project_type,
+                    frameworks=frameworks_str,
+                    file_count=task_context.file_count,
+                    entry_points=entry_str,
+                    has_tests="yes" if task_context.has_tests else "no",
+                    extra=extra,
+                )
+
+            # Inject intent-specific workflow
+            intent = getattr(task_context, "intent", "create")
+            if intent == "create":
+                prompt += "\n\n" + INTENT_CREATE
+            elif intent == "modify":
+                prompt += "\n\n" + INTENT_MODIFY
+            elif intent == "debug":
+                prompt += "\n\n" + INTENT_DEBUG
+            elif intent == "explain":
+                prompt += "\n\n" + INTENT_EXPLAIN
+            # qa intent: no extra prompt needed (model answers directly)
 
         memories = format_memories_for_prompt(workdir)
         if memories:

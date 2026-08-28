@@ -14,7 +14,8 @@ from .backends.openai_backend import OpenAIBackend
 from .cache import get_cache
 from .config import Config, is_server_reachable
 from .memory import extract_and_save_memories
-from .prompt import PromptBuilder, classify_task, COMPLEXITY_CONFIG
+from .discovery import build_task_context, COMPLEXITY_CONFIG
+from .prompt import PromptBuilder, classify_task
 from .session import Session, SessionManager
 
 
@@ -55,15 +56,25 @@ class AgentOrchestrator:
     ) -> Iterator[AgentEvent]:
         """Run full agent task loop. Yields AgentEvents."""
 
-        # ── Auto-classify complexity if not provided ──
-        if complexity is None:
-            complexity = classify_task(task)
+        # ── Phase 0: Discovery — pre-compute task intelligence ──
+        task_context = build_task_context(task, session.workdir)
+        complexity = task_context.complexity
+
+        yield AgentEvent("discovery", {
+            "intent": task_context.intent,
+            "complexity": task_context.complexity,
+            "os": task_context.os_name,
+            "shell": task_context.shell,
+            "project_type": task_context.project_type,
+            "frameworks": task_context.frameworks,
+            "file_count": task_context.file_count,
+        })
 
         comp_cfg = COMPLEXITY_CONFIG.get(complexity, COMPLEXITY_CONFIG["low"])
 
         # ── Determine effective max_turns and max_tokens ──
-        effective_max_turns = min(cfg.max_turns, comp_cfg["max_turns"])
-        effective_max_tokens = comp_cfg["max_tokens"]
+        effective_max_turns = task_context.max_turns
+        effective_max_tokens = task_context.max_tokens
 
         # User override: if they set --max-turns explicitly, respect it
         if cfg.max_turns != 20:  # 20 is new default, so non-default = explicit
@@ -102,7 +113,8 @@ class AgentOrchestrator:
         # ── Configure tools & system prompt based on complexity ──
         active_tools = self.prompt_builder.get_tools(is_offline=is_offline, complexity=complexity)
         system_prompt = self.prompt_builder.build_system_prompt(
-            session.workdir, is_offline=is_offline, complexity=complexity
+            session.workdir, is_offline=is_offline, complexity=complexity,
+            task_context=task_context,
         )
         session.context.set_system_prompt(system_prompt)
 
@@ -126,7 +138,7 @@ class AgentOrchestrator:
         })
 
         # ── Adaptive thinking ──
-        enable_thinking = cfg.enable_thinking
+        enable_thinking = cfg.enable_thinking or task_context.enable_thinking
         if enable_thinking and complexity in ("qa", "low"):
             enable_thinking = False
             yield AgentEvent("adaptive_mode", {"message": "Simple task detected, skipping deep reasoning."})

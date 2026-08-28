@@ -18,7 +18,7 @@ CONFIG_DIR = Path.home() / ".alpiecode"
 CONFIG_PATH = CONFIG_DIR / "config.json"
 
 # Config version — bump this when defaults change to trigger auto-migration
-CONFIG_VERSION = 6  # v6: smart flow, max_turns 20, complexity-aware
+CONFIG_VERSION = 7  # v7: autonomous discovery engine (zero-flag flow)
 
 DEFAULTS = {
     "base_url": "http://20.245.200.125:8000/v1",  # Primary endpoint

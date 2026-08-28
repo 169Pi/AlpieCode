@@ -156,6 +156,7 @@ def run_agent(
     github_repo: str = None,
     server_url: str = None,
     complexity: str = None,
+    debug: bool = False,
 ) -> list:
     """Run non-interactive agent task with Rich presentation."""
     workdir = workdir.resolve()
@@ -200,8 +201,27 @@ def run_agent(
     _checkpoint(workdir, "checkpoint: start")
 
     current_turn = 0
+    last_discovery = {}
+
     for event in event_stream:
-        if event.type == "start" and verbose:
+        if event.type == "discovery" and verbose:
+            last_discovery = event.data
+            if debug and HAS_RICH:
+                console.print(Panel(
+                    f"[bold cyan]🔍 Autonomous Discovery Engine[/bold cyan]\n"
+                    f"• Intent: [bold]{event.data.get('intent')}[/bold]\n"
+                    f"• Complexity: [bold]{event.data.get('complexity')}[/bold]\n"
+                    f"• OS: {event.data.get('os')} | Shell: {event.data.get('shell')}\n"
+                    f"• Project: {event.data.get('project_type')} ({event.data.get('file_count', 0)} files)\n"
+                    f"• Frameworks: {', '.join(event.data.get('frameworks', [])) or 'None'}",
+                    title="Pre-Execution Intelligence",
+                    border_style="dim cyan",
+                    padding=(0, 1)
+                ))
+            elif debug:
+                print(f"[Discovery] intent={event.data.get('intent')}, complexity={event.data.get('complexity')}, shell={event.data.get('shell')}, project={event.data.get('project_type')}")
+
+        elif event.type == "start" and verbose:
             data = event.data
             if HAS_RICH:
                 console.rule("[bold blue]Agent Started[/bold blue]")
@@ -223,6 +243,10 @@ def run_agent(
                 comp_label = {"qa": "Q&A (instant)", "low": "Low (fast)", "medium": "Medium (balanced)", "high": "High (thorough)"}.get(comp, comp)
                 comp_color = {"qa": "cyan", "low": "green", "medium": "yellow", "high": "red"}.get(comp, "white")
                 console.print(f"⚡ Complexity: [bold {comp_color}]{comp_label}[/bold {comp_color}]", style="dim")
+                if last_discovery:
+                    intent_str = last_discovery.get('intent', 'create').title()
+                    proj_str = last_discovery.get('project_type', 'empty')
+                    console.print(f"🔍 Discovery: {intent_str} on {proj_str} project ({last_discovery.get('shell', 'bash')})", style="dim")
                 if cfg.enable_thinking:
                     console.print(f"🧠 Reasoning: [bold green]ON[/bold green]", style="dim")
             else:

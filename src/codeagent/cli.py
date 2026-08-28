@@ -81,6 +81,7 @@ def main():
     common.add_argument("--no-thinking", "--non-thinking", dest="no_thinking", action="store_true", help="Disable VLM reasoning mode")
     common.add_argument("--no-update", action="store_true", help="Skip automatic update check")
     common.add_argument("--quiet", action="store_true", help="Suppress per-turn logging")
+    common.add_argument("--debug", action="store_true", help="Show autonomous discovery and debug diagnostics")
 
     parser = argparse.ArgumentParser(
         prog="alpiecode",
@@ -170,6 +171,7 @@ def main():
             video_path=getattr(args, "video", None),
             url=getattr(args, "url", None),
             github_repo=getattr(args, "github", None),
+            debug=getattr(args, "debug", False),
         )
 
     elif args.command == "chat":
@@ -196,6 +198,7 @@ def main():
             video_path=getattr(args, "video", None),
             url=getattr(args, "url", None),
             github_repo=getattr(args, "github", None),
+            debug=getattr(args, "debug", False),
         )
 
     elif args.command == "doctor":
@@ -231,6 +234,7 @@ def main():
             video_path=getattr(args, "video", None),
             url=getattr(args, "url", None),
             github_repo=getattr(args, "github", None),
+            debug=getattr(args, "debug", False),
         )
 
     elif args.command == "diff":
