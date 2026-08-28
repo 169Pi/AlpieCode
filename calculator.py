@@ -49,7 +49,10 @@ def calculate(expression):
     temp = temp.replace('\x00POWER\x00', '**')
     
     # Safe evaluation using eval with restricted globals
-    result = eval(temp, {"__builtins__": {}}, {})
+    try:
+        result = eval(temp, {"__builtins__": {}}, {})
+    except SyntaxError as e:
+        raise ValueError(f"Invalid expression syntax: {e}")
     return result
 
 
