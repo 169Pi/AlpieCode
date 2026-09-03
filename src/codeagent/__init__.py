@@ -16,7 +16,7 @@ Supports:
 from pathlib import Path
 from typing import Optional, Any, Dict
 
-__version__ = "6.1.0"
+__version__ = "7.0.0"
 
 
 def run(task: str, workdir: str = ".", reasoning_level: str = "medium", **kwargs):

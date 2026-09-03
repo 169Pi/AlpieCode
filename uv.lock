@@ -9,7 +9,7 @@ resolution-markers = [
 
 [[package]]
 name = "alpiecode"
-version = "6.2.0"
+version = "7.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "beautifulsoup4" },

@@ -110,7 +110,18 @@ def ensure_vscode_extension(auto_confirm: bool = False, quiet: bool = False) -> 
             try:
                 win_path = subprocess.check_output(["wslpath", "-w", str(vsix_path)], text=True).strip()
                 if win_path:
-                    target_arg = win_path
+                    # VS Code CLI on Windows disallows UNC paths (\wsl.localhost\...). Copy to Windows temp.
+                    if win_path.startswith("\\"):
+                        try:
+                            win_temp = subprocess.check_output(["cmd.exe", "/c", "echo %TEMP%"], text=True).strip()
+                            if win_temp and not win_temp.startswith("%"):
+                                dest = f"{win_temp}\\alpiecode.vsix"
+                                subprocess.run(["cmd.exe", "/c", f'copy /y "{win_path}" "{dest}"'], capture_output=True)
+                                target_arg = dest
+                        except Exception:
+                            target_arg = win_path
+                    else:
+                        target_arg = win_path
             except Exception:
                 pass
 

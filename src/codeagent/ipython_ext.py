@@ -30,14 +30,16 @@ from .agent import run_agent
 
 
 def _is_notebook() -> bool:
-    """Check if code is running inside a Jupyter notebook or Google Colab."""
+    """Check if code is running inside a web browser notebook (Jupyter, Colab, VS Code Notebook)."""
     try:
         from IPython import get_ipython
         shell = get_ipython()
         if shell is None:
             return False
         shell_name = shell.__class__.__name__
-        if "ZMQInteractiveShell" in shell_name or "Shell" in shell_name:
+        if "TerminalInteractiveShell" in shell_name:
+            return False
+        if "ZMQInteractiveShell" in shell_name or hasattr(shell, "kernel") or "google.colab" in sys.modules:
             return True
         return False
     except Exception:

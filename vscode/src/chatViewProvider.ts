@@ -249,7 +249,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     if (!args || !args.path) { return; }
 
     const relPath: string = args.path;
-    const absPath = path.isAbsolute(relPath) ? relPath : path.join(workdir, relPath);
+    const absPath = this._toLocalPath(relPath);
 
     if (name === "write_file") {
       const content = args.content || "";
@@ -379,18 +379,22 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
     for (const f of sorted) {
       const ext = path.extname(f).toLowerCase();
-      const absF = path.isAbsolute(f) ? f : path.join(workdir, f);
-      if (!fs.existsSync(absF)) { continue; }
+      const localF = this._toLocalPath(f);
+      if (!fs.existsSync(localF)) { continue; }
 
       if (ext === ".py") {
-        const venvPy = path.join(workdir, ".venv", "bin", "python3");
-        const venvPyWin = path.join(workdir, ".venv", "Scripts", "python.exe");
-        if (fs.existsSync(venvPy)) {
+        const venvPyBin = this._toLocalPath(path.join(".venv", "bin", "python3"));
+        const venvPy = this._toLocalPath(path.join(".venv", "bin", "python"));
+        const venvPyWin = this._toLocalPath(path.join(".venv", "Scripts", "python.exe"));
+
+        if (fs.existsSync(venvPyBin)) {
           return ".venv/bin/python3 \"" + f + "\"";
+        } else if (fs.existsSync(venvPy)) {
+          return ".venv/bin/python \"" + f + "\"";
         } else if (fs.existsSync(venvPyWin)) {
-          return ".venv/Scripts/python.exe \"" + f + "\"";
+          return ".venv\\Scripts\\python.exe \"" + f + "\"";
         }
-        return "python3 \"" + f + "\"";
+        return (this._isWslWorkspace() || process.platform !== "win32") ? "python3 \"" + f + "\"" : "python \"" + f + "\"";
       }
       if (ext === ".js")   { return "node \"" + f + "\""; }
       if (ext === ".ts")   { return "npx ts-node \"" + f + "\""; }
@@ -552,12 +556,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private async _checkFileDependencies(workdir: string, files: string[]): Promise<boolean> {
     for (const f of files) {
       const ext = path.extname(f).toLowerCase();
-      const absPath = path.isAbsolute(f) ? f : path.join(workdir, f);
-      if (!fs.existsSync(absPath)) { continue; }
+      const localPath = this._toLocalPath(f);
+      if (!fs.existsSync(localPath)) { continue; }
 
       if (ext === ".py") {
         let content = "";
-        try { content = fs.readFileSync(absPath, "utf-8"); } catch { continue; }
+        try { content = fs.readFileSync(localPath, "utf-8"); } catch { continue; }
 
         // Find all imported module names
         const importRegex = /(?:^|\n)\s*(?:import|from)\s+([a-zA-Z0-9_]+)/g;
@@ -565,14 +569,25 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         let match;
         while ((match = importRegex.exec(content)) !== null) {
           const mod = match[1];
-          if (!PYTHON_STDLIB.has(mod) && !fs.existsSync(path.join(workdir, mod + ".py")) && !fs.existsSync(path.join(workdir, mod))) {
+          const localModPy = this._toLocalPath(mod + ".py");
+          const localModDir = this._toLocalPath(mod);
+          if (!PYTHON_STDLIB.has(mod) && !fs.existsSync(localModPy) && !fs.existsSync(localModDir)) {
             matches.add(mod);
           }
         }
 
-        const venvPy = path.join(workdir, ".venv", "bin", "python3");
-        const venvExists = fs.existsSync(path.join(workdir, ".venv"));
-        const pyRunner = fs.existsSync(venvPy) ? ".venv/bin/python3" : "python3";
+        const venvPyBin = this._toLocalPath(path.join(".venv", "bin", "python3"));
+        const venvPy = this._toLocalPath(path.join(".venv", "bin", "python"));
+        const venvPyWin = this._toLocalPath(path.join(".venv", "Scripts", "python.exe"));
+
+        let pyRunner = (this._isWslWorkspace() || process.platform !== "win32") ? "python3" : "python";
+        if (fs.existsSync(venvPyBin)) {
+          pyRunner = ".venv/bin/python3";
+        } else if (fs.existsSync(venvPy)) {
+          pyRunner = ".venv/bin/python";
+        } else if (fs.existsSync(venvPyWin)) {
+          pyRunner = ".venv\\Scripts\\python.exe";
+        }
 
         for (const mod of matches) {
           let canImport = false;
@@ -589,7 +604,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
               type: "pylib",
               installCmd: `pip install ${mod}`
             };
-            const runCmd = this._detectRunCommand(files, workdir) || `python3 "${f}"`;
+            const runCmd = this._detectRunCommand(files, workdir) || `${pyRunner} "${f}"`;
             await this._promptInstallDep(dep, workdir, files, runCmd);
             return true; // Prompted -> pause auto-run until user responds
           }
@@ -656,10 +671,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private async _promptInstallDep(
     dep: MissingDep, workdir: string, files: string[], runCmd: string
   ) {
+    const isWinNative = !this._isWslWorkspace() && process.platform === "win32";
     if (dep.type === "pylib") {
-      // Check if a venv already exists in the workdir
-      const venvPath = path.join(workdir, ".venv");
-      const venvExists = fs.existsSync(venvPath);
+      // Check if a venv already exists in the workdir using host-local path
+      const venvFolder = this._toLocalPath(".venv");
+      const venvExists = fs.existsSync(venvFolder);
 
       if (venvExists) {
         // Venv exists — offer to install inside it
@@ -671,13 +687,18 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           "Skip"
         );
         if (choice === "Install in .venv") {
-          const pipPath = path.join(".venv", "bin", "pip");
-          this._runInstallTask(pipPath + " install " + dep.name, workdir, files, runCmd);
+          let installCmd = "";
+          if (isWinNative) {
+            installCmd = ".venv\\Scripts\\pip install " + dep.name;
+          } else {
+            // In WSL / Linux / macOS: check uv, or venv pip, or python -m pip
+            installCmd = `(command -v uv >/dev/null 2>&1 && uv pip install --python .venv ${dep.name}) || (.venv/bin/pip install ${dep.name}) || (.venv/bin/python3 -m pip install ${dep.name})`;
+          }
+          this._runInstallTask(installCmd, workdir, files, runCmd);
         } else if (choice === "Install Globally") {
-          this._runInstallTask("pip install " + dep.name, workdir, files, runCmd);
+          const pipCmd = isWinNative ? `pip install ${dep.name}` : `python3 -m pip install --user ${dep.name} || pip install ${dep.name}`;
+          this._runInstallTask(pipCmd, workdir, files, runCmd);
         }
-        // else Skip → do nothing
-
       } else {
         // No venv — offer to create one
         const choice = await vscode.window.showInformationMessage(
@@ -688,10 +709,17 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           "Skip"
         );
         if (choice === "Create .venv & Install") {
-          const cmd = "python3 -m venv .venv && .venv/bin/pip install " + dep.name;
+          let cmd = "";
+          if (isWinNative) {
+            cmd = `python -m venv .venv && .venv\\Scripts\\pip install ${dep.name}`;
+          } else {
+            // In WSL / Linux / macOS: prefer uv if available, or python3 -m venv with pip fallback
+            cmd = `(command -v uv >/dev/null 2>&1 && uv venv .venv && uv pip install --python .venv ${dep.name}) || (python3 -m venv .venv && .venv/bin/pip install ${dep.name}) || (python3 -m pip install --user ${dep.name})`;
+          }
           this._runInstallTask(cmd, workdir, files, runCmd);
         } else if (choice === "Install Globally") {
-          this._runInstallTask("pip install " + dep.name, workdir, files, runCmd);
+          const pipCmd = isWinNative ? `pip install ${dep.name}` : `python3 -m pip install --user ${dep.name} || pip install ${dep.name}`;
+          this._runInstallTask(pipCmd, workdir, files, runCmd);
         }
       }
 
@@ -859,6 +887,34 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
 
   /* ---- WSL Detection & Command Wrapping ---- */
+
+  /** Convert a workdir-relative or POSIX WSL path to a local path accessible by host Node fs */
+  private _toLocalPath(filePath: string): string {
+    const folders = vscode.workspace.workspaceFolders;
+    if (!folders?.length) { return filePath; }
+    const rootFs = folders[0].uri.fsPath;
+
+    if (!filePath || filePath === ".") {
+      return rootFs;
+    }
+
+    // If already absolute Windows path or UNC path
+    if (/^[a-zA-Z]:[\\\/]/.test(filePath) || /^\\\\/.test(filePath)) {
+      return filePath;
+    }
+
+    // If it's a POSIX WSL path like /home/singh/Projects/test/foo.py
+    if (this._isWslWorkspace() && filePath.startsWith("/")) {
+      const posixWorkdir = this._workdir();
+      if (filePath.startsWith(posixWorkdir)) {
+        const rel = filePath.slice(posixWorkdir.length).replace(/^[\\\/]+/, "");
+        return path.join(rootFs, rel);
+      }
+    }
+
+    // Relative path: join directly to rootFs
+    return path.join(rootFs, filePath);
+  }
 
   /** True when VS Code accesses WSL files via UNC path (\\wsl.localhost\...) */
   private _isWslWorkspace(): boolean {
