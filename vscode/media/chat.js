@@ -468,6 +468,13 @@
       case "tool_result":
         appendToolResult(event.data);
         break;
+      case "stall_intervention":
+        appendSystemMessage("🔄 Progress stall detected. Agent is adjusting strategy...");
+        break;
+      case "safety_ceiling":
+        appendSystemMessage("🛑 Safety ceiling reached (emergency stop).");
+        finalizeAssistantMessage();
+        break;
       case "error":
         appendError(event.data.error || "An error occurred");
         break;
@@ -664,44 +671,105 @@
     scrollToBottom();
   }
 
+  var lastToolCard = null;
+
+  function formatToolSummary(name, args) {
+    if (!args || typeof args !== "object") return "";
+    if (name === "bash") {
+      var cmd = (args.command || "").trim();
+      return cmd.length > 45 ? "$ " + cmd.substring(0, 42) + "..." : "$ " + cmd;
+    }
+    if (name === "write_file" || name === "edit_file" || name === "read_file") {
+      var p = args.path || "";
+      var extra = "";
+      if (name === "write_file" && args.content) {
+        var lines = String(args.content).split("\n").length;
+        extra = " (" + lines + " lines)";
+      }
+      return p + extra;
+    }
+    if (name === "list_files") return args.path || ".";
+    if (name === "search" || name === "web_search") return '"' + (args.query || "") + '"';
+    return Object.keys(args).filter(function(k) { return k !== "content"; }).map(function(k) {
+      return k + "=" + JSON.stringify(args[k]).substring(0, 20);
+    }).join(" ");
+  }
+
   function appendToolCall(data) {
-    var card = document.createElement("div");
-    card.className = "tool-card";
+    var row = document.createElement("div");
+    row.className = "tool-badge-row";
 
     var icon = getToolIcon(data.name);
-    var argsText = "";
-    if (data.arguments) {
-      var args = typeof data.arguments === "string" ? tryParse(data.arguments) : data.arguments;
-      argsText = formatArgs(args);
+    var args = data.arguments;
+    if (typeof args === "string") {
+      args = tryParse(args);
     }
+    var summary = formatToolSummary(data.name, args);
 
-    card.innerHTML =
-      '<div class="tool-header"><span>' + icon + '</span> <span>' + escapeHtml(data.name || "tool") + '</span></div>' +
-      (argsText ? '<div class="tool-args">' + escapeHtml(argsText) + '</div>' : "");
+    row.innerHTML =
+      '<div class="tool-badge-header">' +
+        '<div class="tool-badge-title">' +
+          '<span class="tool-badge-icon">' + icon + '</span> ' +
+          '<span class="tool-badge-name">' + escapeHtml(data.name || "tool") + '</span> ' +
+          '<span class="tool-badge-summary">' + escapeHtml(summary) + '</span>' +
+        '</div>' +
+        '<span class="tool-badge-status running">⏳</span>' +
+      '</div>' +
+      '<div class="tool-badge-drawer hidden"></div>';
 
-    messagesEl.appendChild(card);
+    var header = row.querySelector(".tool-badge-header");
+    var drawer = row.querySelector(".tool-badge-drawer");
+    header.addEventListener("click", function() {
+      drawer.classList.toggle("hidden");
+    });
+
+    messagesEl.appendChild(row);
+    lastToolCard = { row: row, drawer: drawer, name: data.name };
     scrollToBottom();
   }
 
   function appendToolResult(data) {
-    var card = document.createElement("div");
-    card.className = "tool-result";
+    var output = data.output || data.content || data.result || "";
+    var text = typeof output === "string" ? output : JSON.stringify(output, null, 2);
+    var isError = text.toLowerCase().indexOf("error:") !== -1 || text.indexOf('"exit_code": 1') !== -1;
 
-    var output = data.output || data.content || data.result || JSON.stringify(data);
-    var display = typeof output === "string"
-      ? (output.length > 400 ? output.substring(0, 400) + "..." : output)
-      : JSON.stringify(output, null, 2);
-
-    card.innerHTML =
-      '<div class="tool-result-header"><span>\u2705</span> <span>Result</span></div>' +
-      '<div class="tool-result-content">' + escapeHtml(display) + '</div>';
-
-    messagesEl.appendChild(card);
+    if (lastToolCard && lastToolCard.row) {
+      var statusEl = lastToolCard.row.querySelector(".tool-badge-status");
+      if (statusEl) {
+        statusEl.className = "tool-badge-status " + (isError ? "error" : "success");
+        statusEl.textContent = isError ? "✗" : "✓";
+      }
+      if (lastToolCard.drawer) {
+        var display = text.length > 800 ? text.substring(0, 800) + "\n... (truncated)" : text;
+        lastToolCard.drawer.textContent = display;
+      }
+      lastToolCard = null;
+    } else {
+      var fallback = document.createElement("div");
+      fallback.className = "tool-badge-row";
+      fallback.innerHTML =
+        '<div class="tool-badge-header">' +
+          '<span class="tool-badge-name">result</span> ' +
+          '<span class="tool-badge-status ' + (isError ? 'error' : 'success') + '">' + (isError ? '✗' : '✓') + '</span>' +
+        '</div>' +
+        '<div class="tool-badge-drawer">' + escapeHtml(text.substring(0, 400)) + '</div>';
+      messagesEl.appendChild(fallback);
+    }
     scrollToBottom();
   }
 
   function appendAssistantToken(text) {
-    currentThinkingEl = null;
+    if (currentThinkingEl) {
+      var parentBlock = currentThinkingEl.closest ? currentThinkingEl.closest(".thinking-block") : currentThinkingEl.parentElement;
+      if (parentBlock) {
+        var hdr = parentBlock.querySelector(".thinking-header");
+        if (hdr && !hdr.classList.contains("collapsed")) {
+          hdr.classList.add("collapsed");
+          currentThinkingEl.classList.add("collapsed");
+        }
+      }
+      currentThinkingEl = null;
+    }
     if (!currentAssistantEl) {
       currentAssistantEl = document.createElement("div");
       currentAssistantEl.className = "msg assistant";

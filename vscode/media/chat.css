@@ -1008,3 +1008,89 @@ body {
   from { opacity: 0; transform: translateY(6px); }
   to   { opacity: 1; transform: translateY(0); }
 }
+
+/* ---- Unified Tool Badge Row (Cursor / Claude Code Style) ---- */
+.tool-badge-row {
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--vscode-panel-border, rgba(255, 255, 255, 0.08));
+  margin: 4px 0;
+  overflow: hidden;
+  font-size: 11.5px;
+  transition: background 0.15s, border-color 0.15s;
+}
+.tool-badge-row:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(96, 165, 250, 0.3);
+}
+
+.tool-badge-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  cursor: pointer;
+  user-select: none;
+  gap: 8px;
+}
+
+.tool-badge-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-badge-icon {
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.tool-badge-name {
+  font-weight: 600;
+  color: #60a5fa;
+  font-family: var(--vscode-editor-font-family, 'Consolas', monospace);
+}
+
+.tool-badge-summary {
+  color: var(--vscode-descriptionForeground, rgba(255, 255, 255, 0.6));
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-badge-status {
+  font-size: 11px;
+  font-weight: bold;
+  flex-shrink: 0;
+}
+.tool-badge-status.running {
+  color: #fbbf24;
+  animation: pulse 1s infinite;
+}
+.tool-badge-status.success {
+  color: #4ade80;
+}
+.tool-badge-status.error {
+  color: #f87171;
+}
+
+.tool-badge-drawer {
+  background: var(--vscode-textCodeBlock-background, rgba(0, 0, 0, 0.3));
+  border-top: 1px solid var(--vscode-panel-border, rgba(255, 255, 255, 0.06));
+  padding: 6px 10px;
+  font-family: var(--vscode-editor-font-family, 'Consolas', monospace);
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--vscode-foreground, #cccccc);
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 180px;
+  overflow-y: auto;
+}
+.tool-badge-drawer.hidden {
+  display: none;
+}
