@@ -26,7 +26,7 @@ DEFAULTS = {
     "model_repo": "169Pi/Alpie_learn_prototype_GGUF_NEW",
     "api_key": "not-needed",
     "hf_token": None,
-    "max_turns": 20,
+    "max_turns": 200,
     "temperature": 0.1,
     "max_tokens": 8192,
     "enable_thinking": False,  # Reasoning OFF by default
@@ -88,7 +88,7 @@ class Config:
     model_repo: str = "169Pi/Alpie_learn_prototype_GGUF_NEW"  # HuggingFace repo for offline GGUF
     api_key: str = "not-needed"
     hf_token: Optional[str] = None
-    max_turns: int = 20
+    max_turns: int = 200  # Safety ceiling only — agent runs until DONE
     temperature: float = 0.1
     max_tokens: int = 8192
     enable_thinking: bool = False
@@ -117,7 +117,7 @@ def load_config() -> Config:
                 data["enable_thinking"] = False
                 data["temperature"] = 0.1
                 data["max_tokens"] = 8192
-                data["max_turns"] = 20
+                data["max_turns"] = 200
                 data["config_version"] = CONFIG_VERSION
                 needs_save = True
         except Exception:

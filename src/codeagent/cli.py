@@ -162,7 +162,6 @@ def main():
     if args.command == "run":
         if args.max_turns:
             cfg.max_turns = args.max_turns
-            cfg._explicit_max_turns = True
         _show_banner()
         from .agent import run_agent
         run_agent(
@@ -178,7 +177,6 @@ def main():
     elif args.command == "chat":
         if args.max_turns:
             cfg.max_turns = args.max_turns
-            cfg._explicit_max_turns = True
         _show_banner()
         from .agent import run_chat
         run_chat(Path(args.workdir), cfg, verbose=not args.quiet)

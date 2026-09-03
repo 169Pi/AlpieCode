@@ -333,25 +333,21 @@ def is_simple_task(task: str) -> bool:
 
 COMPLEXITY_CONFIG = {
     "qa": {
-        "max_turns": 3,
         "max_tokens": 4096,
         "tools": "none",  # No tools for Q&A
         "prompt": "default",
     },
     "low": {
-        "max_turns": 15,
         "max_tokens": 8192,
         "tools": "core",  # 5 core tools
         "prompt": "default",
     },
     "medium": {
-        "max_turns": 40,
         "max_tokens": 16384,
         "tools": "full",  # All 15 tools
         "prompt": "default",
     },
     "high": {
-        "max_turns": 60,
         "max_tokens": 16384,
         "tools": "full",  # All 15 tools
         "prompt": "high",  # Detailed system prompt

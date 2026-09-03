@@ -49,7 +49,6 @@ class TaskContext:
     dependencies: List[str] = field(default_factory=list)
 
     # Budget (computed from complexity)
-    max_turns: int = 10
     max_tokens: int = 8192
     tool_set: str = "core"          # none, core, full
     enable_thinking: bool = False
@@ -500,25 +499,21 @@ def compute_complexity(intent: str, repo_info: dict, task: str) -> str:
 
 COMPLEXITY_CONFIG = {
     "qa": {
-        "max_turns": 3,
         "max_tokens": 4096,
         "tool_set": "none",
         "enable_thinking": False,
     },
     "low": {
-        "max_turns": 15,
         "max_tokens": 8192,
         "tool_set": "core",
         "enable_thinking": False,
     },
     "medium": {
-        "max_turns": 40,
         "max_tokens": 16384,
         "tool_set": "full",
         "enable_thinking": True,
     },
     "high": {
-        "max_turns": 60,
         "max_tokens": 16384,
         "tool_set": "full",
         "enable_thinking": True,
@@ -568,7 +563,6 @@ def build_task_context(task: str, workdir: Path) -> TaskContext:
         entry_points=repo["entry_points"],
         dependencies=repo["dependencies"],
         # Budget
-        max_turns=budget["max_turns"],
         max_tokens=budget["max_tokens"],
         tool_set=budget["tool_set"],
         enable_thinking=budget["enable_thinking"],

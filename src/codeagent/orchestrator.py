@@ -15,6 +15,7 @@ from .cache import get_cache
 from .config import Config, is_server_reachable
 from .memory import extract_and_save_memories
 from .discovery import build_task_context, COMPLEXITY_CONFIG
+from .progress import ProgressMonitor
 from .prompt import PromptBuilder, classify_task
 from .session import Session, SessionManager
 
@@ -72,13 +73,11 @@ class AgentOrchestrator:
 
         comp_cfg = COMPLEXITY_CONFIG.get(complexity, COMPLEXITY_CONFIG["low"])
 
-        # ── Determine effective max_turns and max_tokens ──
-        effective_max_turns = task_context.max_turns
+        # ── Determine effective max_tokens ──
         effective_max_tokens = task_context.max_tokens
 
-        # User override: if they set --max-turns explicitly, respect it
-        if getattr(cfg, "_explicit_max_turns", False):
-            effective_max_turns = cfg.max_turns
+        # Safety ceiling: hard emergency brake (should never be hit naturally)
+        safety_ceiling = cfg.max_turns if cfg.max_turns != 200 else 200
 
         # ── Response cache check ──
         is_cacheable = not any([image_path, video_path, url, github_repo])
@@ -137,12 +136,7 @@ class AgentOrchestrator:
             "complexity": complexity,
         })
 
-        if complexity in ("medium", "high"):
-            session.context.add_user_message(
-                f"[BUDGET & GOAL] Available turn budget: {effective_max_turns} turns. "
-                "Plan the needed components, create the complete files, verify with bash, "
-                "and finish with DONE: <summary> as soon as verification succeeds."
-            )
+
 
         # ── Adaptive thinking ──
         enable_thinking = cfg.enable_thinking or task_context.enable_thinking
@@ -150,40 +144,43 @@ class AgentOrchestrator:
             enable_thinking = False
             yield AgentEvent("adaptive_mode", {"message": "Simple task detected, skipping deep reasoning."})
 
-        # ── Turn loop ──
-        wrap_up_injected = False
+        # ── Goal-driven turn loop (no fixed limit) ──
+        progress_monitor = ProgressMonitor()
+        turn = 0
 
-        for turn in range(effective_max_turns):
+        while True:
+            turn += 1
+
             if session.cancelled:
-                yield AgentEvent("cancelled", {"turn": turn + 1})
+                yield AgentEvent("cancelled", {"turn": turn})
                 break
 
             # Context compaction
             if session.context.check_and_compact():
-                yield AgentEvent("compaction", {"turn": turn + 1})
+                yield AgentEvent("compaction", {"turn": turn})
 
-            # ── Progressive wrap-up injection ──
-            # Step 1: Gentle verification reminder at 70%
-            if not wrap_up_injected and turn >= int(effective_max_turns * 0.70):
-                wrap_up_injected = True
-                remaining = effective_max_turns - turn
-                session.context.add_user_message(
-                    f"[SYSTEM] Turn budget update: {remaining} turns remaining. "
-                    "Ensure all necessary files are created and run verification tests now. "
-                    "As soon as verification succeeds, output DONE: <summary>."
-                )
-                yield AgentEvent("wrap_up", {"turn": turn + 1, "remaining": remaining})
+            # ── Stall Detection & Corrective Intervention ──
+            if progress_monitor.is_stalled(threshold=3):
+                advice = progress_monitor.get_stall_advice()
+                session.context.add_user_message(advice)
+                yield AgentEvent("stall_intervention", {
+                    "turn": turn,
+                    "consecutive_stalls": progress_monitor.consecutive_stalls,
+                    "interventions": progress_monitor.stall_interventions,
+                })
+                # After 3 interventions (= 9+ stalled turns), force wrap-up
+                if progress_monitor.stall_interventions >= 3:
+                    session.context.add_user_message(
+                        "[SYSTEM] Multiple stall interventions have not resolved the issue. "
+                        "Finish now with whatever you have. Output DONE: <summary of what was completed>."
+                    )
 
-            # Step 2: Final wrap-up call at 90%
-            if not getattr(self, "_final_wrap_up_injected", False) and turn >= int(effective_max_turns * 0.90):
-                self._final_wrap_up_injected = True
-                remaining = effective_max_turns - turn
-                session.context.add_user_message(
-                    f"[SYSTEM] FINAL TURNS: Only {remaining} turns remaining. "
-                    "Do not start new exploration. Fix any remaining errors and output DONE: <summary>."
-                )
+            # ── Safety ceiling (emergency only) ──
+            if turn > safety_ceiling:
+                yield AgentEvent("safety_ceiling", {"turn": turn, "ceiling": safety_ceiling})
+                break
 
-            yield AgentEvent("turn_start", {"turn": turn + 1})
+            yield AgentEvent("turn_start", {"turn": turn})
 
             try:
                 if enable_thinking:
@@ -235,7 +232,7 @@ class AgentOrchestrator:
                     results = session.executor.execute_tool_calls(tool_calls)
                     for res in results:
                         yield AgentEvent("tool_result", {
-                            "turn": turn + 1,
+                            "turn": turn,
                             "id": res.tool_call_id,
                             "name": res.name,
                             "content": res.content,
@@ -263,7 +260,7 @@ class AgentOrchestrator:
             if tool_calls:
                 for tc in tool_calls:
                     yield AgentEvent("tool_call", {
-                        "turn": turn + 1,
+                        "turn": turn,
                         "id": tc.id,
                         "name": tc.name,
                         "arguments": tc.arguments,
@@ -273,13 +270,25 @@ class AgentOrchestrator:
 
                 for res in results:
                     yield AgentEvent("tool_result", {
-                        "turn": turn + 1,
+                        "turn": turn,
                         "id": res.tool_call_id,
                         "name": res.name,
                         "content": res.content,
                         "duration_ms": res.duration_ms,
                     })
                     session.context.add_tool_result(res.tool_call_id, res.content)
+
+                # ── Record progress for stall detection ──
+                tc_dicts = [{"name": tc.name, "arguments": tc.arguments} for tc in tool_calls]
+                res_dicts = [{"content": res.content, "name": res.name} for res in results]
+                snap = progress_monitor.record_turn(turn, tc_dicts, res_dicts)
+                yield AgentEvent("turn_progress", {
+                    "turn": turn,
+                    "had_progress": snap.had_progress,
+                    "files_created": list(snap.files_created),
+                    "files_modified": list(snap.files_modified),
+                    "consecutive_stalls": progress_monitor.consecutive_stalls,
+                })
 
                 continue
 
@@ -302,5 +311,6 @@ class AgentOrchestrator:
             yield AgentEvent("done", {"summary": "Task completed."})
             return
 
-        yield AgentEvent("max_turns_reached", {"max_turns": effective_max_turns})
+        status = progress_monitor.get_status_summary()
+        yield AgentEvent("max_turns_reached", {"max_turns": safety_ceiling, "progress": status})
         extract_and_save_memories(session.workdir, session.context.messages)

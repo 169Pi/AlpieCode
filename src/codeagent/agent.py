@@ -306,6 +306,37 @@ def run_agent(
             else:
                 print(f"\n❌ Model Error: {event.data['error']}")
 
+        elif event.type == "stall_intervention" and verbose:
+            if HAS_RICH:
+                console.print(
+                    f"🔄 [bold yellow]Progress stall detected[/bold yellow] "
+                    f"(turn {event.data['turn']}, {event.data['consecutive_stalls']} stalled turns, "
+                    f"intervention #{event.data['interventions']})",
+                    style="yellow"
+                )
+            else:
+                print(f"🔄 Progress stall detected (turn {event.data['turn']})")
+
+        elif event.type == "turn_progress" and debug:
+            snap = event.data
+            status = "✅" if snap["had_progress"] else "⚠️"
+            if HAS_RICH:
+                console.print(
+                    Text(f"  {status} Progress: created={snap['files_created']}, "
+                    f"modified={snap['files_modified']}, stalls={snap['consecutive_stalls']}"),
+                    style="dim"
+                )
+
+        elif event.type == "safety_ceiling" and verbose:
+            if HAS_RICH:
+                console.print(
+                    f"\n🛑 [bold red]Safety ceiling ({event.data['ceiling']} turns) reached.[/bold red]\n"
+                    "This is an emergency stop — the agent may be stuck in an unrecoverable loop.",
+                    style="bold red"
+                )
+            else:
+                print(f"\n🛑 Safety ceiling ({event.data['ceiling']}) reached.")
+
         elif event.type == "done":
             summary = event.data["summary"]
             _checkpoint(workdir, "checkpoint: done")
@@ -316,7 +347,18 @@ def run_agent(
                     console.rule("[bold yellow]💬 Agent Replied[/bold yellow]")
 
         elif event.type == "max_turns_reached" and verbose:
-            console.print(f"\n⚠️  Max turns ({event.data['max_turns']}) reached without completion.", style="bold yellow")
+            progress = event.data.get("progress", {})
+            if HAS_RICH:
+                console.print(f"\n⚠️  [bold yellow]Safety ceiling ({event.data['max_turns']}) reached.[/bold yellow]", style="bold yellow")
+                if progress:
+                    console.print(
+                        f"   Progress: {progress.get('progress_turns', 0)}/{progress.get('total_turns', 0)} turns made progress, "
+                        f"{progress.get('files_created', 0)} files created, "
+                        f"{progress.get('stall_interventions', 0)} stall interventions",
+                        style="dim"
+                    )
+            else:
+                print(f"\n⚠️ Safety ceiling ({event.data['max_turns']}) reached.")
 
     return session.context.messages if "session" in locals() else []
 
