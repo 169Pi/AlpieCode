@@ -48,6 +48,8 @@ SAFE_PREFIXES = [
     "python -m pytest", "python3 -m pytest", "pytest", "npm test",
     "npm run test", "make test", "cargo test", "go test",
     "python -c", "python3 -c", "node -e",
+    "python3 ", "python ", "node ", "bun ", "deno ", "cargo ", "go ",
+    "make", "cmake", "gcc", "g++", "clang", "clang++", "./",
     "tree", "sort", "uniq", "cut", "awk", "sed -n", "diff",
     "env", "printenv", "set",
     "type", "command -v",
@@ -138,8 +140,9 @@ def gate_command(command: str, auto_approve: bool = False) -> bool:
 
     if risk == RiskLevel.WARNING:
         if auto_approve:
-            if HAS_RICH:
-                console.print(Text(f"   ⚠️  {reason}", style="yellow"))
+            if "Unknown command" not in reason:
+                if HAS_RICH:
+                    console.print(Text(f"   ⚠️  {reason}", style="yellow"))
             return True
         # In interactive mode, show warning but proceed
         if HAS_RICH:
