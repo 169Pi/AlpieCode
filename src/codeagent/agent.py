@@ -65,45 +65,88 @@ except ImportError:
 def _print_reasoning(reasoning: str):
     if not reasoning or not reasoning.strip():
         return
+    clean = reasoning.strip()
     if HAS_RICH:
-        text = Text(reasoning.strip(), style="dim italic")
-        console.print(Panel(text, title="💭 Thinking", border_style="dim blue", padding=(0, 1)))
+        console.print(Text(f"💭 {clean}", style="dim italic"))
     else:
-        console.print(f"\n💭 Thinking: {reasoning.strip()}")
+        console.print(f"💭 {clean}")
+
+
+def _format_tool_summary(name: str, args: dict) -> str:
+    if not isinstance(args, dict):
+        return ""
+    if name == "bash":
+        cmd = args.get("command", "").strip()
+        return f"$ {cmd[:80]}..." if len(cmd) > 80 else f"$ {cmd}"
+    elif name in ("write_file", "edit_file", "read_file"):
+        path = args.get("path", "")
+        extra = ""
+        if name == "write_file" and "content" in args:
+            lines = len(str(args["content"]).splitlines())
+            extra = f" ({lines} lines)"
+        return f"{path}{extra}"
+    elif name == "list_files":
+        return args.get("path", ".")
+    elif name in ("search", "web_search"):
+        return f"'{args.get('query', '')}'"
+    elif name == "fetch_web_page":
+        return args.get("url", "")
+    else:
+        parts = [f"{k}={repr(v)[:30]}" for k, v in args.items() if k != "content"]
+        return " ".join(parts)
 
 
 def _print_tool_call(turn: int, name: str, args: dict):
-    display_args = {}
-    for k, v in args.items():
-        if isinstance(v, str) and len(v) > 200:
-            display_args[k] = v[:200] + "..."
-        else:
-            display_args[k] = v
+    summary = _format_tool_summary(name, args)
     if HAS_RICH:
-        args_str = json.dumps(display_args, indent=2)
-        console.print(f"\n🔧 [bold cyan]Tool:[/bold cyan] [bold]{name}[/bold]", highlight=False)
-        console.print(Text(f"   {args_str}", style="cyan"))
+        console.print(f"\n⏺ [bold cyan]{name}[/bold cyan] [white]{summary}[/white]")
     else:
-        console.print(f"\n🔧 Tool: {name}({display_args})")
+        console.print(f"\n⏺ {name} {summary}")
 
 
 def _print_tool_result(result: str):
-    truncated = result[:1500] + ("..." if len(result) > 1500 else "")
-    if HAS_RICH:
-        console.print(Text(f"   → {truncated}", style="green"))
+    clean = result.strip()
+    if '"exit_code"' in clean:
+        try:
+            data = json.loads(clean.split("\n", 1)[-1] if clean.startswith("⚠️") else clean)
+            out = data.get("stdout", "").strip()
+            err = data.get("stderr", "").strip()
+            code = data.get("exit_code", 0)
+            if code == 0:
+                clean = out if out else "success"
+            else:
+                clean = f"exit {code}: {err}" if err else f"exit {code}"
+        except Exception:
+            pass
+
+    lines = clean.splitlines()
+    if len(lines) > 8:
+        display = "\n".join(lines[:6]) + f"\n  ... ({len(lines)-6} lines omitted)"
     else:
-        console.print(f"   → {truncated}")
+        display = clean[:500] + ("..." if len(clean) > 500 else "")
+
+    if HAS_RICH:
+        style = "dim green" if not ("exit 1" in clean or "error:" in clean.lower()[:30]) else "dim red"
+        console.print(Text(f"  └ {display}", style=style))
+    else:
+        console.print(f"  └ {display}")
 
 
 def _print_assistant_message(content: str):
+    if not content or not content.strip():
+        return
+    text = content.strip()
+    if text.upper().startswith("DONE:"):
+        text = text[5:].strip()
     if HAS_RICH:
         try:
-            md = Markdown(content)
-            console.print(Panel(md, title="🤖 Assistant", border_style="green", padding=(0, 1)))
+            console.print()
+            console.print(Markdown(text))
         except Exception:
-            console.print(Panel(Text(content), title="🤖 Assistant", border_style="green", padding=(0, 1)))
+            console.print()
+            console.print(text)
     else:
-        console.print(f"\n🤖 Assistant: {content}")
+        print(f"\n{text}")
 
 
 # ── Git helpers ───────────────────────────────────────────────────────
@@ -227,9 +270,27 @@ def run_agent(
 
         elif event.type == "start" and verbose:
             data = event.data
-            if HAS_RICH:
-                console.rule("[bold blue]Agent Started[/bold blue]")
-                console.print(Text(f"📋 Task: {task.splitlines()[0]}", style="bold"))
+            if debug:
+                if HAS_RICH:
+                    console.rule("[bold blue]Agent Started (Debug)[/bold blue]")
+                    console.print(Text(f"📋 Task: {task.splitlines()[0]}", style="bold"))
+                    console.print(f"📂 Workdir: {workdir}", style="dim")
+                    mode_str = "[bold green]ONLINE[/bold green]" if not data["is_offline"] else "[bold yellow]OFFLINE[/bold yellow]"
+                    console.print(f"🌐 Mode: {mode_str}", style="dim")
+                    comp = data.get("complexity", "low")
+                    comp_label = {"qa": "Q&A (instant)", "low": "Low (fast)", "medium": "Medium (balanced)", "high": "High (thorough)"}.get(comp, comp)
+                    console.print(f"⚡ Complexity: {comp_label}", style="dim")
+                    if last_discovery:
+                        console.print(f"🔍 Discovery: {last_discovery.get('intent', 'create')} on {last_discovery.get('project_type', 'empty')} project", style="dim")
+                else:
+                    print(f"[Start] task={task.splitlines()[0]}, mode={'offline' if data['is_offline'] else 'online'}")
+            else:
+                # Clean, professional presentation like Claude Code / Codex
+                if data.get("is_offline"):
+                    if HAS_RICH:
+                        console.print("[dim yellow]⚡ Offline mode[/dim yellow]")
+                    else:
+                        print("⚡ Offline mode")
                 if github_repo:
                     console.print(f"🐙 GitHub Repo: {github_repo}", style="cyan")
                 if image_path:
@@ -238,36 +299,17 @@ def run_agent(
                     console.print(f"🎬 Video: {video_path}", style="cyan")
                 if url:
                     console.print(f"📺 URL: {url}", style="cyan")
-                console.print(f"📂 Workdir: {workdir}", style="dim")
-                if not data["is_offline"]:
-                    console.print(f"🌐 Mode: [bold green]ONLINE[/bold green]", style="dim")
-                else:
-                    console.print(f"🧠 Mode: [bold yellow]OFFLINE[/bold yellow]", style="dim")
-                comp = data.get("complexity", "low")
-                comp_label = {"qa": "Q&A (instant)", "low": "Low (fast)", "medium": "Medium (balanced)", "high": "High (thorough)"}.get(comp, comp)
-                comp_color = {"qa": "cyan", "low": "green", "medium": "yellow", "high": "red"}.get(comp, "white")
-                console.print(f"⚡ Complexity: [bold {comp_color}]{comp_label}[/bold {comp_color}]", style="dim")
-                if last_discovery:
-                    intent_str = last_discovery.get('intent', 'create').title()
-                    proj_str = last_discovery.get('project_type', 'empty')
-                    console.print(f"🔍 Discovery: {intent_str} on {proj_str} project ({last_discovery.get('shell', 'bash')})", style="dim")
-                if cfg.enable_thinking:
-                    console.print(f"🧠 Reasoning: [bold green]ON[/bold green]", style="dim")
-            else:
-                console.rule("Agent Started")
-                console.print(f"📋 Task: {task.splitlines()[0]}")
-                console.print(f"📂 Workdir: {workdir}")
 
         elif event.type == "adaptive_mode" and verbose and HAS_RICH:
             console.print("⚡ [dim]Adaptive mode: simple task detected, skipping deep reasoning for speed[/dim]")
 
         elif event.type == "turn_start":
             current_turn = event.data["turn"]
-            if verbose:
+            if debug:
                 if HAS_RICH:
-                    console.rule(f"[bold]Turn {current_turn}[/bold]", style="blue")
+                    console.print(f"[dim]── Step {current_turn} ──[/dim]")
                 else:
-                    console.rule(f"Turn {current_turn}")
+                    print(f"── Step {current_turn} ──")
 
         elif event.type == "compaction" and verbose:
             console.print("🗜️  Compacting context (approaching token limit)...", style="yellow")
@@ -338,13 +380,10 @@ def run_agent(
                 print(f"\n🛑 Safety ceiling ({event.data['ceiling']}) reached.")
 
         elif event.type == "done":
-            summary = event.data["summary"]
+            summary = event.data.get("summary", "")
             _checkpoint(workdir, "checkpoint: done")
-            if verbose and HAS_RICH:
-                if "DONE" in summary.upper():
-                    console.rule("[bold green]✅ Task Complete[/bold green]")
-                else:
-                    console.rule("[bold yellow]💬 Agent Replied[/bold yellow]")
+            if debug and HAS_RICH:
+                console.rule("[bold green]✅ Complete[/bold green]")
 
         elif event.type == "max_turns_reached" and verbose:
             progress = event.data.get("progress", {})
@@ -410,11 +449,11 @@ def run_chat(workdir: Path, cfg: Config, verbose: bool = True) -> None:
             break
 
         for event in orchestrator.run_task(session, user_input, cfg):
-            if event.type == "turn_start" and verbose:
+            if event.type == "turn_start" and debug:
                 if HAS_RICH:
-                    console.rule(f"[bold]Turn {event.data['turn']}[/bold]", style="blue")
+                    console.print(f"[dim]── Step {event.data['turn']} ──[/dim]")
                 else:
-                    console.rule(f"Turn {event.data['turn']}")
+                    print(f"── Step {event.data['turn']} ──")
 
             elif event.type == "thinking" and verbose:
                 _print_reasoning(event.data["content"])

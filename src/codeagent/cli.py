@@ -162,7 +162,6 @@ def main():
     if args.command == "run":
         if args.max_turns:
             cfg.max_turns = args.max_turns
-        _show_banner()
         from .agent import run_agent
         run_agent(
             args.task, Path(args.workdir), cfg,
@@ -182,7 +181,6 @@ def main():
         run_chat(Path(args.workdir), cfg, verbose=not args.quiet)
 
     elif args.command == "plan":
-        _show_banner()
         plan_task = (
             f"PLANNING ONLY — Do NOT make any file edits. "
             f"Analyze the codebase and create a detailed implementation plan for the following task. "
@@ -206,7 +204,6 @@ def main():
         sys.exit(run_doctor())
 
     elif args.command == "explain":
-        _show_banner()
         target = args.target
         target_path = Path(args.workdir) / target if not Path(target).is_absolute() else Path(target)
         if target_path.exists() and target_path.is_file():
