@@ -29,7 +29,7 @@ def _show_banner():
 
 
 def _normalize_args():
-    known_commands = {"init", "serve", "run", "chat", "plan", "diff", "doctor", "explain", "-h", "--help", "--version"}
+    known_commands = {"init", "serve", "run", "chat", "plan", "diff", "doctor", "explain", "version", "-h", "--help", "-v", "--version"}
     subcommand = None
     
     # Check if a subcommand is present
@@ -83,12 +83,15 @@ def main():
     common.add_argument("--quiet", action="store_true", help="Suppress per-turn logging")
     common.add_argument("--debug", action="store_true", help="Show autonomous discovery and debug diagnostics")
 
+    from . import __version__
     parser = argparse.ArgumentParser(
         prog="alpiecode",
         description="AlpieCode — Autonomous AI Coding Agent powered by 169Pi Alpie VLM",
         parents=[common],
     )
+    parser.add_argument("-v", "--version", action="version", version=f"%(prog)s {__version__}")
     sub = parser.add_subparsers(dest="command")
+    sub.add_parser("version", help="Show current version")
 
     # ── init ──
     sub.add_parser("init", help="Configure your VLM/OpenAI-compatible endpoint")
@@ -123,6 +126,10 @@ def main():
 
     if not args.command:
         parser.print_help()
+        return
+
+    if args.command == "version":
+        print(f"alpiecode {__version__}")
         return
 
     if args.command == "init":
