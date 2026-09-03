@@ -339,19 +339,19 @@ COMPLEXITY_CONFIG = {
         "prompt": "default",
     },
     "low": {
-        "max_turns": 10,
+        "max_turns": 15,
         "max_tokens": 8192,
         "tools": "core",  # 5 core tools
         "prompt": "default",
     },
     "medium": {
-        "max_turns": 20,
-        "max_tokens": 8192,
+        "max_turns": 40,
+        "max_tokens": 16384,
         "tools": "full",  # All 15 tools
         "prompt": "default",
     },
     "high": {
-        "max_turns": 40,
+        "max_turns": 60,
         "max_tokens": 16384,
         "tools": "full",  # All 15 tools
         "prompt": "high",  # Detailed system prompt
@@ -408,13 +408,30 @@ REPO_CONTEXT_TEMPLATE = """\
 {extra}"""
 
 INTENT_CREATE = """\
-## Task Intent: Create New Code
+## Task Intent: Create New Code (Single-file / Simple Tasks)
 - Write the COMPLETE, WORKING code on Turn 1 using write_file
 - Do NOT explore the filesystem first -- start coding immediately
 - Include ALL imports, ALL functions, ALL logic -- no stubs, no TODOs
 - After writing, run with bash to verify
 - Fix any errors with edit_file, then re-run
 - When everything works: DONE: <summary>
+"""
+
+INTENT_CREATE_COMPLEX = """\
+## Task Intent: Create Multi-Component Code (Medium/High Complexity)
+- Turn 1: Think through and plan the architecture. Identify ALL files needed (e.g. HTML, CSS, JS, tests).
+- Sequential Creation: Write each file completely using write_file in logical dependency order.
+- No Thrashing: Do NOT delete files you just created with `rm`. If adjustments are needed, use edit_file or overwrite directly.
+- Verification: After writing the files, run or verify them using bash (e.g. run test suite, build check, or verify syntax).
+- Early Stopping: Once verified and working, output: DONE: <summary> immediately. Do not run redundant checks.
+"""
+
+GOAL_DRIVEN_RULES = """\
+## Execution & Goal Convergence Rules
+- Efficiency First: Plan your actions to minimize wasted turns. You can execute multiple tool calls in a single turn.
+- No Thrashing: NEVER delete a file (e.g. `rm <file>`) immediately after creating it to start over. Use `edit_file` to modify what needs fixing.
+- Immediate Completion: As soon as your code is written and verified, output `DONE: <summary>`. Do NOT linger or rerun commands that already passed.
+- Targeted Editing: If `edit_file` fails, use `read_file` to inspect the exact lines and whitespace before attempting another edit.
 """
 
 INTENT_MODIFY = """\
@@ -492,13 +509,19 @@ class PromptBuilder:
             # Inject intent-specific workflow
             intent = getattr(task_context, "intent", "create")
             if intent == "create":
-                prompt += "\n\n" + INTENT_CREATE
+                if complexity in ("medium", "high"):
+                    prompt += "\n\n" + INTENT_CREATE_COMPLEX
+                else:
+                    prompt += "\n\n" + INTENT_CREATE
             elif intent == "modify":
                 prompt += "\n\n" + INTENT_MODIFY
             elif intent == "debug":
                 prompt += "\n\n" + INTENT_DEBUG
             elif intent == "explain":
                 prompt += "\n\n" + INTENT_EXPLAIN
+
+            if complexity in ("medium", "high"):
+                prompt += "\n\n" + GOAL_DRIVEN_RULES
             # qa intent: no extra prompt needed (model answers directly)
 
         memories = format_memories_for_prompt(workdir)

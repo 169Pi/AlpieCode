@@ -178,16 +178,18 @@ def detect_environment() -> dict:
 
 
 def _detect_shell(os_name: str) -> str:
-    """Detect available shell, preferring WSL on Windows like Claude/Codex agents."""
+    """Detect available shell, aligned with tools.py execution path."""
 
     if os_name == "windows":
-        # On Windows: prefer WSL (like Claude, Codex, Gemini agents do)
+        # Check if bash binary exists (Git Bash / MSYS)
+        if shutil.which("bash"):
+            return "bash"
         if _is_wsl_available():
             return "wsl"
         # Fallback to PowerShell
         if shutil.which("powershell") or shutil.which("pwsh"):
             return "powershell"
-        return "cmd"
+        return "cmd" 
 
     if os_name in ("linux", "wsl"):
         return "bash"  # Standard on Linux/WSL
@@ -466,13 +468,14 @@ def compute_complexity(intent: str, repo_info: dict, task: str) -> str:
 
     # -- MEDIUM: multi-step tasks --
     medium_keywords = [
-        "api", "rest api", "graphql", "server",
-        "game", "snake", "tetris", "chess", "pong", "sudoku",
-        "website", "web page", "web app", "webapp",
-        "test suite", "unit tests", "integration test",
-        "dashboard", "portfolio",
-        "react", "vue", "angular", "next.js",
-        "django", "flask app", "fastapi app",
+        "api", "rest api", "graphql", "server", "backend", "frontend",
+        "game", "snake", "tetris", "chess", "pong", "sudoku", "flappy", "arcade",
+        "website", "web page", "web app", "webapp", "html", "css", "javascript",
+        "test suite", "unit tests", "integration test", "e2e test",
+        "dashboard", "portfolio", "application", "app with", "notes app", "todo app",
+        "react", "vue", "angular", "next.js", "tailwind",
+        "django", "flask app", "fastapi app", "express",
+        "refactor", "migrate", "redesign", "restructure", "investigate",
     ]
     if any(kw in task_lower for kw in medium_keywords):
         return "medium"
@@ -503,19 +506,19 @@ COMPLEXITY_CONFIG = {
         "enable_thinking": False,
     },
     "low": {
-        "max_turns": 10,
+        "max_turns": 15,
         "max_tokens": 8192,
         "tool_set": "core",
         "enable_thinking": False,
     },
     "medium": {
-        "max_turns": 20,
-        "max_tokens": 8192,
+        "max_turns": 40,
+        "max_tokens": 16384,
         "tool_set": "full",
-        "enable_thinking": False,
+        "enable_thinking": True,
     },
     "high": {
-        "max_turns": 40,
+        "max_turns": 60,
         "max_tokens": 16384,
         "tool_set": "full",
         "enable_thinking": True,

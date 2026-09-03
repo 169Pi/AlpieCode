@@ -77,7 +77,7 @@ class AgentOrchestrator:
         effective_max_tokens = task_context.max_tokens
 
         # User override: if they set --max-turns explicitly, respect it
-        if cfg.max_turns != 20:  # 20 is new default, so non-default = explicit
+        if getattr(cfg, "_explicit_max_turns", False):
             effective_max_turns = cfg.max_turns
 
         # ── Response cache check ──
@@ -137,6 +137,13 @@ class AgentOrchestrator:
             "complexity": complexity,
         })
 
+        if complexity in ("medium", "high"):
+            session.context.add_user_message(
+                f"[BUDGET & GOAL] Available turn budget: {effective_max_turns} turns. "
+                "Plan the needed components, create the complete files, verify with bash, "
+                "and finish with DONE: <summary> as soon as verification succeeds."
+            )
+
         # ── Adaptive thinking ──
         enable_thinking = cfg.enable_thinking or task_context.enable_thinking
         if enable_thinking and complexity in ("qa", "low"):
@@ -155,16 +162,26 @@ class AgentOrchestrator:
             if session.context.check_and_compact():
                 yield AgentEvent("compaction", {"turn": turn + 1})
 
-            # ── Wrap-up injection at 80% of turns ──
-            if not wrap_up_injected and turn >= int(effective_max_turns * 0.8):
+            # ── Progressive wrap-up injection ──
+            # Step 1: Gentle verification reminder at 70%
+            if not wrap_up_injected and turn >= int(effective_max_turns * 0.70):
                 wrap_up_injected = True
                 remaining = effective_max_turns - turn
                 session.context.add_user_message(
-                    f"[SYSTEM] You have {remaining} turns remaining. "
-                    "Finish your current work now. If code is written and tested, "
-                    "output DONE: <summary>. If code has errors, make one final fix attempt."
+                    f"[SYSTEM] Turn budget update: {remaining} turns remaining. "
+                    "Ensure all necessary files are created and run verification tests now. "
+                    "As soon as verification succeeds, output DONE: <summary>."
                 )
                 yield AgentEvent("wrap_up", {"turn": turn + 1, "remaining": remaining})
+
+            # Step 2: Final wrap-up call at 90%
+            if not getattr(self, "_final_wrap_up_injected", False) and turn >= int(effective_max_turns * 0.90):
+                self._final_wrap_up_injected = True
+                remaining = effective_max_turns - turn
+                session.context.add_user_message(
+                    f"[SYSTEM] FINAL TURNS: Only {remaining} turns remaining. "
+                    "Do not start new exploration. Fix any remaining errors and output DONE: <summary>."
+                )
 
             yield AgentEvent("turn_start", {"turn": turn + 1})
 

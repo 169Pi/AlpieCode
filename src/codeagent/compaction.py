@@ -20,7 +20,7 @@ MAX_CONTEXT_TOKENS = 262_144
 # Start compacting when we hit this percentage of the context window
 COMPACT_THRESHOLD = 0.70
 # Number of recent turns to always keep intact
-KEEP_RECENT_TURNS = 20
+KEEP_RECENT_TURNS = 12
 # Approximate chars per token (rough heuristic)
 CHARS_PER_TOKEN = 4
 

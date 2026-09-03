@@ -16,11 +16,16 @@ from typing import Tuple
 try:
     from rich.console import Console
     from rich.panel import Panel
+    from rich.text import Text
+    from rich.markup import escape
     console = Console()
     HAS_RICH = True
 except ImportError:
     HAS_RICH = False
     console = None
+
+    def escape(text: str) -> str:
+        return text
 
 
 class RiskLevel(Enum):
@@ -134,19 +139,19 @@ def gate_command(command: str, auto_approve: bool = False) -> bool:
     if risk == RiskLevel.WARNING:
         if auto_approve:
             if HAS_RICH:
-                console.print(f"   ⚠️  [yellow]{reason}[/yellow]", highlight=False)
+                console.print(Text(f"   ⚠️  {reason}", style="yellow"))
             return True
         # In interactive mode, show warning but proceed
         if HAS_RICH:
-            console.print(f"   ⚠️  [yellow]{reason}[/yellow]", highlight=False)
+            console.print(Text(f"   ⚠️  {reason}", style="yellow"))
         return True
 
     if risk == RiskLevel.DANGEROUS:
         if HAS_RICH:
             console.print(Panel(
                 f"[bold red]🛑 BLOCKED — Dangerous Command[/bold red]\n\n"
-                f"Command: [cyan]{command}[/cyan]\n"
-                f"Reason: {reason}\n\n"
+                f"Command: [cyan]{escape(command)}[/cyan]\n"
+                f"Reason: {escape(reason)}\n\n"
                 f"This command has been blocked for safety.\n"
                 f"If you need to run it, do so manually in your terminal.",
                 border_style="red",

@@ -37,6 +37,7 @@ _build_system_prompt = lambda workdir, is_offline=False: PromptBuilder().build_s
 try:
     from rich.console import Console
     from rich.markdown import Markdown
+    from rich.markup import escape
     from rich.panel import Panel
     from rich.rule import Rule
     from rich.text import Text
@@ -45,6 +46,9 @@ try:
     HAS_RICH = True
 except ImportError:
     HAS_RICH = False
+
+    def escape(text: str) -> str:
+        return text
 
     class _FallbackConsole:
         def print(self, *args, **kwargs):
@@ -78,7 +82,7 @@ def _print_tool_call(turn: int, name: str, args: dict):
     if HAS_RICH:
         args_str = json.dumps(display_args, indent=2)
         console.print(f"\n🔧 [bold cyan]Tool:[/bold cyan] [bold]{name}[/bold]", highlight=False)
-        console.print(f"   {args_str}", style="cyan", highlight=False)
+        console.print(Text(f"   {args_str}", style="cyan"))
     else:
         console.print(f"\n🔧 Tool: {name}({display_args})")
 
@@ -86,7 +90,7 @@ def _print_tool_call(turn: int, name: str, args: dict):
 def _print_tool_result(result: str):
     truncated = result[:1500] + ("..." if len(result) > 1500 else "")
     if HAS_RICH:
-        console.print(f"   → {truncated}", style="green", highlight=False)
+        console.print(Text(f"   → {truncated}", style="green"))
     else:
         console.print(f"   → {truncated}")
 
@@ -97,7 +101,7 @@ def _print_assistant_message(content: str):
             md = Markdown(content)
             console.print(Panel(md, title="🤖 Assistant", border_style="green", padding=(0, 1)))
         except Exception:
-            console.print(Panel(content, title="🤖 Assistant", border_style="green", padding=(0, 1)))
+            console.print(Panel(Text(content), title="🤖 Assistant", border_style="green", padding=(0, 1)))
     else:
         console.print(f"\n🤖 Assistant: {content}")
 
@@ -225,7 +229,7 @@ def run_agent(
             data = event.data
             if HAS_RICH:
                 console.rule("[bold blue]Agent Started[/bold blue]")
-                console.print(f"📋 Task: {task.splitlines()[0]}", style="bold")
+                console.print(Text(f"📋 Task: {task.splitlines()[0]}", style="bold"))
                 if github_repo:
                     console.print(f"🐙 GitHub Repo: {github_repo}", style="cyan")
                 if image_path:
@@ -288,8 +292,9 @@ def run_agent(
             _checkpoint(workdir, "checkpoint: response")
 
         elif event.type == "fallback" and verbose:
+            err_str = escape(str(event.data.get('error', '')))
             if HAS_RICH:
-                console.print(f"\n⚠️  [bold yellow]Online Server Error / Timeout[/bold yellow] ({event.data['error']})", style="yellow")
+                console.print(f"\n⚠️  [bold yellow]Online Server Error / Timeout[/bold yellow] ({err_str})", style="yellow")
                 console.print("🔄 [bold cyan]Auto-falling back to local GGUF engine...[/bold cyan]", style="cyan")
             else:
                 print(f"\n⚠️ Online Server Error: {event.data['error']}")
@@ -297,7 +302,7 @@ def run_agent(
 
         elif event.type == "error" and verbose:
             if HAS_RICH:
-                console.print(f"\n❌ [bold red]Model Error[/bold red]\n   Error: {event.data['error']}\n")
+                console.print(Text(f"\n❌ Model Error\n   Error: {event.data['error']}\n", style="bold red"))
             else:
                 print(f"\n❌ Model Error: {event.data['error']}")
 
@@ -385,7 +390,10 @@ def run_chat(workdir: Path, cfg: Config, verbose: bool = True) -> None:
                 _checkpoint(workdir, "checkpoint: done")
 
             elif event.type == "error":
-                console.print(f"❌ Model error: {event.data['error']}", style="bold red" if HAS_RICH else None)
+                if HAS_RICH:
+                    console.print(Text(f"❌ Model error: {event.data['error']}", style="bold red"))
+                else:
+                    print(f"❌ Model error: {event.data['error']}")
 
             elif event.type == "done":
                 break

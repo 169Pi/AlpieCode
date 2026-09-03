@@ -1,3 +1,5 @@
+_RECENTLY_WRITTEN_FILES = set()
+
 """
 Tool definitions and implementations for AlpieCode.
 
@@ -437,11 +439,11 @@ def _bash(workdir: Path, command: str) -> str:
             shell_cmd,
             cwd=workdir, capture_output=True, text=True,
             stdin=subprocess.DEVNULL,
-            timeout=30, env=env,
+            timeout=120, env=env,
         )
 
-        stdout = _smart_truncate(result.stdout, 6000)
-        stderr = _smart_truncate(result.stderr, 4000)
+        stdout = _smart_truncate(result.stdout, 3000)
+        stderr = _smart_truncate(result.stderr, 2000)
 
         output = json.dumps({
             "stdout": stdout,
@@ -462,6 +464,20 @@ def _bash(workdir: Path, command: str) -> str:
                     f"failing line before making edits. Do NOT guess — read first.\n"
                 )
             output = hint + output
+
+        # ── Anti-thrashing guard: warned if deleting file created in this session ──
+        cmd_parts = command.strip().split()
+        if cmd_parts and cmd_parts[0] in ("rm", "del", "Remove-Item"):
+            for part in cmd_parts[1:]:
+                base_part = Path(part.strip('"\'')).name.lower()
+                if base_part in _RECENTLY_WRITTEN_FILES:
+                    _RECENTLY_WRITTEN_FILES.discard(base_part)
+                    output += (
+                        f"\n\n💡 ADVICE: You deleted '{base_part}' which was created in a recent turn. "
+                        "Avoid deleting and rewriting entire files from scratch. "
+                        "For iterative improvements, use edit_file or overwrite directly with write_file."
+                    )
+                    break
 
         # ── Smart Guardrail 2: Silent success — script ran but no output ──
         elif result.returncode == 0 and not stdout.strip() and not stderr.strip():
@@ -505,7 +521,8 @@ def _read_file(workdir: Path, path: str, start_line: int = None, end_line: int =
 def _write_file(workdir: Path, path: str, content: str) -> str:
     p = workdir / path
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(content)
+    p.write_text(content, encoding="utf-8")
+    _RECENTLY_WRITTEN_FILES.add(Path(path).name.lower())
     return f"wrote {len(content)} bytes to {path}"
 
 
@@ -513,13 +530,25 @@ def _edit_file(workdir: Path, path: str, old_str: str, new_str: str) -> str:
     p = workdir / path
     if not p.exists():
         return f"error: file not found: {path}"
-    text = p.read_text()
+    text = p.read_text(encoding="utf-8", errors="replace")
     count = text.count(old_str)
     if count == 0:
-        return "error: old_str not found in file. Make sure it matches exactly (including whitespace)."
+        import difflib
+        lines = text.splitlines()
+        old_lines = [ol.strip() for ol in old_str.splitlines() if ol.strip()]
+        target_line = old_lines[0] if old_lines else old_str.strip()
+        close_matches = difflib.get_close_matches(target_line, [l.strip() for l in lines], n=3, cutoff=0.3)
+        nearby = [(i + 1, l) for i, l in enumerate(lines) if l.strip() in close_matches]
+        hint = ""
+        if nearby:
+            hint = "\nClosest matching lines in file:\n" + "\n".join(f"  Line {n}: {l.strip()[:80]}" for n, l in nearby[:3])
+        return (
+            f"error: old_str not found in file '{path}'. It must match existing text EXACTLY (including whitespace/indentation).{hint}\n"
+            f"→ Action: Run read_file on '{path}' around these lines to see the exact whitespace, then retry edit_file."
+        )
     if count > 1:
-        return f"error: old_str matched {count} times, need exactly 1 match. Use a more specific old_str."
-    p.write_text(text.replace(old_str, new_str, 1))
+        return f"error: old_str matched {count} times in '{path}'. Must match exactly 1 occurrence. Include more surrounding lines in old_str to make it unique."
+    p.write_text(text.replace(old_str, new_str, 1), encoding="utf-8")
     return "edit applied"
 
 
@@ -689,9 +718,10 @@ def _request_user_input(question: str) -> str:
     try:
         from rich.console import Console
         from rich.panel import Panel
+        from rich.text import Text
         console = Console()
         console.print(Panel(
-            f"[bold]{question}[/bold]",
+            Text(question, style="bold"),
             title="❓ Agent needs your input",
             border_style="yellow",
         ))
