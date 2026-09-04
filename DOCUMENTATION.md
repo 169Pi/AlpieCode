@@ -306,7 +306,7 @@ High-speed Fill-In-Middle endpoint designed for editor ghost text.
 ```json
 {
   "status": "online",
-  "backend": "Online API (http://20.245.200.125:8000/v1)",
+  "backend": "Online API (https://test.169pi.ai/v1)",
   "available": true,
   "uptime_seconds": 1240.5,
   "version": "0.9.8"
@@ -360,7 +360,7 @@ All shell commands are automatically audited by the Guardian before execution:
 ### Configuration File (`~/.alpiecode/config.json`)
 ```json
 {
-  "base_url": "http://20.245.200.125:8000/v1",
+  "base_url": "https://test.169pi.ai/v1",
   "model": "169Pi/grpo_phase_2_merged",
   "model_repo": "169Pi/Alpie_learn_prototype_GGUF_NEW",
   "api_key": "not-needed",

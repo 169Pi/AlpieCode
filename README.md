@@ -329,7 +329,7 @@ The AlpieCode agent autonomously orchestrates **15 specialized tools**:
 ## ❓ FAQ & Troubleshooting
 
 #### Q: The extension shows "Local GGUF" even though I am connected to the internet. Why?
-> **A:** AlpieCode checks reachability of the specific remote model API (`http://20.245.200.125:8000/v1`). If port 8000 on the remote VM is not listening, it automatically switches to **Local GGUF** so you can continue coding without interruption. Run `alpiecode doctor` to verify.
+> **A:** AlpieCode checks reachability of the specific remote model API (`https://test.169pi.ai/v1`). If the remote endpoint is unreachable, it automatically switches to **Local GGUF** so you can continue coding without interruption. Run `alpiecode doctor` to verify.
 
 #### Q: How do I test the extension after updates?
 > **A:** In VS Code, press **`Ctrl+Shift+P`** → select **`Developer: Reload Window`**.

@@ -18,10 +18,10 @@ CONFIG_DIR = Path.home() / ".alpiecode"
 CONFIG_PATH = CONFIG_DIR / "config.json"
 
 # Config version — bump this when defaults change to trigger auto-migration
-CONFIG_VERSION = 7  # v7: autonomous discovery engine (zero-flag flow)
+CONFIG_VERSION = 8  # v7: autonomous discovery engine (zero-flag flow)
 
 DEFAULTS = {
-    "base_url": "http://20.245.200.125:8000/v1",  # Primary endpoint
+    "base_url": "https://test.169pi.ai/v1",  # Primary endpoint
     "model": "alpie_9b",
     "model_repo": "169Pi/Alpie_learn_prototype_GGUF_NEW",
     "api_key": "not-needed",
@@ -107,12 +107,10 @@ def load_config() -> Config:
 
             # ── Auto-migrate stale configs ────────────────────────────
             saved_version = saved_data.get("config_version", 1)
-            if saved_version < CONFIG_VERSION:
-                # v1 → v2: n_ctx was 16384, upgrade to 32768
+            if saved_version < CONFIG_VERSION or "20.245.200.125" in str(saved_data.get("base_url", "")):
                 if saved_data.get("n_ctx") == 16384:
                     data["n_ctx"] = 32768
-                # v5 → v6: smart flow, max_turns 20
-                data["base_url"] = "http://20.245.200.125:8000/v1"
+                data["base_url"] = "https://test.169pi.ai/v1"
                 data["model"] = "alpie_9b"
                 data["enable_thinking"] = False
                 data["temperature"] = 0.1
