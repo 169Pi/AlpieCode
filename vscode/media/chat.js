@@ -1,3 +1,33 @@
+
+  // ---- Active Selection Context Pill ----
+  var activeSelectionContext = null;
+
+  function renderSelectionPill(data) {
+    removeSelectionPill();
+    if (!data || !data.fileName) return;
+
+    var pill = document.createElement("div");
+    pill.id = "selection-pill";
+    pill.className = "selection-pill";
+    pill.innerHTML =
+      '<span>📎 ' + escapeHtml(data.fileName + ':' + data.range) + '</span>' +
+      '<span class="selection-pill-close" title="Dismiss">✕</span>';
+
+    pill.querySelector(".selection-pill-close").addEventListener("click", function() {
+      activeSelectionContext = null;
+      removeSelectionPill();
+    });
+
+    var inputArea = document.getElementById("input-area");
+    if (inputArea) {
+      inputArea.insertBefore(pill, inputArea.firstChild);
+    }
+  }
+
+  function removeSelectionPill() {
+    var existing = document.getElementById("selection-pill");
+    if (existing) existing.remove();
+  }
 /**
  * AlpieCode Chat — Webview Script (v4)
  *
@@ -26,6 +56,8 @@
   const statusText        = document.getElementById("status-text");
   const thinkingCheck     = document.getElementById("thinking-check");
   const tokenBadge        = document.getElementById("token-badge");
+  const liveBuildBar      = document.getElementById("live-build-bar");
+  const liveBuildText     = document.getElementById("live-build-text");
   let lastTokenStats      = { tokPerSec: 0, tokenCount: 0, sessionTotal: 0 };
 
   // Slash Commands DOM
@@ -334,6 +366,83 @@
     });
   }
 
+
+  // ---- Live Build Status Bar ----
+  function updateBuildStatus(data) {
+    if (!liveBuildBar || !liveBuildText) return;
+    if (!data || data.status === "complete" || data.status === "idle") {
+      liveBuildBar.classList.add("hidden");
+      return;
+    }
+    liveBuildBar.classList.remove("hidden");
+    var status = data.status || "building";
+    var msg = data.message || "Building...";
+    var spinner = liveBuildBar.querySelector(".live-build-spinner");
+    if (spinner) {
+      spinner.textContent = status === "rephrasing" ? "🔄" : "🔨";
+    }
+    liveBuildText.textContent = msg;
+  }
+
+  // ---- Interactive GitHub Push Card ----
+  function renderGitPushPrompt(data) {
+    var existing = document.getElementById("github-push-card");
+    if (existing) existing.remove();
+
+    var card = document.createElement("div");
+    card.id = "github-push-card";
+    card.className = "github-push-card";
+
+    var username = escapeHtml(data.username || "developer");
+    var branch = escapeHtml(data.branch || "main");
+    var remoteText = data.remote ? escapeHtml(data.remote) : "New Remote Repository";
+
+    card.innerHTML =
+      '<div class="github-push-header">' +
+        '<span class="github-icon">🐙</span>' +
+        '<span class="github-push-title">GitHub Code Push</span>' +
+      '</div>' +
+      '<div class="github-push-body">' +
+        '<p class="github-push-question">Do you want to push the code to GitHub with username <strong class="github-user-tag">@' + username + '</strong>?</p>' +
+        '<div class="github-push-meta">' +
+          '<span>Branch: <code>' + branch + '</code></span>' +
+          '<span>Target: <code>' + remoteText + '</code></span>' +
+        '</div>' +
+      '</div>' +
+      '<div class="github-push-actions">' +
+        '<button id="push-confirm-btn" class="push-btn-confirm">✓ Yes, Push to GitHub</button>' +
+        '<button id="push-change-btn" class="push-btn-change">✎ Change Push ID</button>' +
+        '<button id="push-skip-btn" class="push-btn-skip">✕ Skip</button>' +
+      '</div>';
+
+    card.querySelector("#push-confirm-btn").addEventListener("click", function() {
+      card.querySelector(".github-push-actions").innerHTML = '<span class="push-spinner">⏳ Pushing code to GitHub...</span>';
+      vscode.postMessage({
+        action: "confirmGitPush",
+        username: data.username,
+        branch: data.branch,
+        workdir: data.workdir
+      });
+    });
+
+    card.querySelector("#push-change-btn").addEventListener("click", function() {
+      vscode.postMessage({
+        action: "changeGitUsername",
+        currentUsername: data.username,
+        branch: data.branch,
+        workdir: data.workdir
+      });
+    });
+
+    card.querySelector("#push-skip-btn").addEventListener("click", function() {
+      card.remove();
+      vscode.postMessage({ action: "dismissGitPush" });
+    });
+
+    messagesEl.appendChild(card);
+    scrollToBottom();
+  }
+
   // ---- Webview Message Handler ----
   window.addEventListener("message", function(e) {
     var message = e.data;
@@ -357,6 +466,7 @@
       case "streamEnd":
         setStreaming(false);
         finalizeAssistantMessage();
+        updateBuildStatus({ status: "complete" });
         break;
       case "agentEvent":
         handleAgentEvent(message.event);
@@ -376,8 +486,33 @@
       case "changeRejected":
         appendSystemMessage("❌ Changes rejected.");
         break;
+      case "updateSelectionContext":
+        activeSelectionContext = message.data;
+        renderSelectionPill(message.data);
+        break;
+      case "clearSelectionContext":
+        if (activeSelectionContext && !activeSelectionContext.pinned) {
+          activeSelectionContext = null;
+          removeSelectionPill();
+        }
+        break;
       case "tokenStats":
         updateTokenStats(message);
+        break;
+      case "buildStatus":
+        updateBuildStatus(message);
+        break;
+      case "gitPushPrompt":
+        renderGitPushPrompt(message.data);
+        break;
+      case "gitPushResult":
+        var pushCard = document.getElementById("github-push-card");
+        if (pushCard) pushCard.remove();
+        if (message.success) {
+          appendSystemMessage("✅ **" + message.message + "**" + (message.output ? "\n```\n" + message.output + "\n```" : ""));
+        } else {
+          appendError("❌ " + message.error);
+        }
         break;
     }
   });
@@ -545,6 +680,15 @@
       appendSystemMessage("\u2705 Change accepted — applying...");
       vscode.postMessage({ action: "acceptChange" });
     });
+
+    var diffBtn = document.createElement("button");
+    diffBtn.className = "cp-btn cp-diff";
+    diffBtn.textContent = "🔍 Review Diff";
+    diffBtn.title = "Open side-by-side diff in VS Code editor";
+    diffBtn.addEventListener("click", function() {
+      vscode.postMessage({ action: "openDiff" });
+    });
+    actions.appendChild(diffBtn);
 
     var rejectBtn = document.createElement("button");
     rejectBtn.className = "cp-btn cp-reject";

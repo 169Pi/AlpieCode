@@ -139,6 +139,32 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
     this._healthCheck();
 
+    // Track active editor selection to provide instant context chips
+    const selDis = vscode.window.onDidChangeTextEditorSelection((e) => {
+      const editor = e.textEditor;
+      if (!editor || !editor.selection || editor.selection.isEmpty) {
+        this._post({ action: "clearSelectionContext" });
+        return;
+      }
+      const sel = editor.selection;
+      const text = editor.document.getText(sel);
+      if (!text || text.trim().length === 0) {
+        this._post({ action: "clearSelectionContext" });
+        return;
+      }
+      const fileName = path.basename(editor.document.fileName);
+      const range = `${sel.start.line + 1}-${sel.end.line + 1}`;
+      this._post({
+        action: "updateSelectionContext",
+        data: {
+          fileName,
+          range,
+          snippet: text.slice(0, 4000)
+        }
+      });
+    });
+    this._ctx.subscriptions.push(selDis);
+
     // Start fresh by default; populate the history drawer with past conversations
     this._activeId = null;
     setTimeout(() => {
@@ -177,6 +203,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     const workdir = this._workdir();
 
     this._post({ action: "streamStart" });
+    this._post({ action: "buildStatus", status: "rephrasing", message: "Solidifying prompt requirements..." });
 
     // Token meter: reset counters
     this._tokenCount = 0;
@@ -200,8 +227,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           // Token meter: approximate token count (rough: ~4 chars per token)
           this._tokenCount += Math.max(1, Math.ceil(chunk.length / 4));
         }
+        if (ev.type === "status") {
+          this._post({ action: "buildStatus", status: ev.data.phase || "building", message: ev.data.message || "" });
+        }
         if (ev.type === "tool_call") {
           this._handleToolCall(workdir, ev.data);
+          this._post({ action: "buildStatus", status: "building", message: this._toolBuildingDesc(ev.data) });
         }
         this._post({ action: "agentEvent", event: ev });
       },
@@ -221,6 +252,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         this._sessionTokenTotal += this._tokenCount;
         this._pushTokenStats();
         this._post({ action: "streamEnd" });
+        this._post({ action: "buildStatus", status: "complete", message: "Build completed" });
         this._abortStream = undefined;
 
         // Auto-run generated code in sandbox terminal (only if no pending approval)
@@ -341,6 +373,26 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     });
   }
 
+  /** Open VS Code native side-by-side diff editor between current file and proposed change. */
+  private async _openSideBySideDiff() {
+    if (!this._pendingChange) { return; }
+    const pc = this._pendingChange;
+    try {
+      const originalUri = vscode.Uri.file(pc.absPath);
+      const tempPath = path.join(os.tmpdir(), "alpie_proposed_" + path.basename(pc.absPath));
+      fs.writeFileSync(tempPath, pc.newContent, "utf-8");
+      const proposedUri = vscode.Uri.file(tempPath);
+      await vscode.commands.executeCommand(
+        "vscode.diff",
+        originalUri,
+        proposedUri,
+        `${path.basename(pc.absPath)} (Current ↔ Proposed Edits)`
+      );
+    } catch (err: any) {
+      vscode.window.showErrorMessage("Could not open diff viewer: " + (err?.message || err));
+    }
+  }
+
   /** Apply the pending change to disk. */
   private _applyPendingChange() {
     if (!this._pendingChange) { return; }
@@ -422,7 +474,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     const autoRun = vscode.workspace
       .getConfiguration("alpiecode")
       .get<boolean>("autoRun", true);
-    if (!autoRun) { return; }
+    if (!autoRun) {
+      this._promptGitPush(workdir);
+      return;
+    }
 
     const files = [...new Set(this._modifiedFiles)];
     if (files.length === 0) { return; }
@@ -434,7 +489,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
 
     const runCmd = this._detectRunCommand(files, workdir);
-    if (!runCmd) { return; }
+    if (!runCmd) {
+      this._promptGitPush(workdir);
+      return;
+    }
 
     const autoFix = vscode.workspace
       .getConfiguration("alpiecode")
@@ -493,6 +551,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             }
           } catch {}
           vscode.window.showInformationMessage("AlpieCode: Code executed successfully!");
+          this._promptGitPush(workdir);
         }
       }
     });
@@ -850,6 +909,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         this._pendingChange = null;
         this._post({ action: "changeRejected" });
         break;
+      case "openDiff":
+        this._openSideBySideDiff();
+        break;
       case "editRequest":
         this._pendingChange = null;
         if (m.text) {
@@ -882,9 +944,214 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       case "getHistory":
         this._pushHistoryList();
         break;
+      case "confirmGitPush":
+        this._executeGitPush(m.workdir || this._workdir(), m.username, m.branch);
+        break;
+      case "changeGitUsername":
+        this._handleChangeGitUsername(m.workdir || this._workdir(), m.currentUsername, m.branch);
+        break;
+      case "dismissGitPush":
+        this._post({
+          action: "agentEvent",
+          event: { type: "message", data: { content: "ℹ️ GitHub push skipped. Local changes saved." } }
+        });
+        break;
     }
   }
 
+
+
+  /* ---- Live Building Log Descriptions ---- */
+
+  private _toolBuildingDesc(data: any): string {
+    const name = data.name || "action";
+    let args = data.arguments;
+    if (typeof args === "string") {
+      try { args = JSON.parse(args); } catch { args = {}; }
+    }
+    if (name === "write_file") {
+      return "Writing " + (args?.path || "file") + "...";
+    }
+    if (name === "edit_file") {
+      return "Editing " + (args?.path || "file") + "...";
+    }
+    if (name === "read_file") {
+      return "Inspecting " + (args?.path || "file") + "...";
+    }
+    if (name === "bash") {
+      const cmd = (args?.command || "").trim();
+      return "Running: " + (cmd.length > 50 ? cmd.substring(0, 47) + "..." : cmd);
+    }
+    if (name === "list_files") {
+      return "Scanning project structure...";
+    }
+    return "Executing " + name + "...";
+  }
+
+  /* ---- GitHub Push Confirmation & Custom Push ID ---- */
+
+  private _getGitUsername(workdir: string): string {
+    // 1. Configured setting
+    const cfgUser = vscode.workspace.getConfiguration("alpiecode").get<string>("githubUsername");
+    if (cfgUser && cfgUser.trim()) { return cfgUser.trim(); }
+
+    // 2. git config user.name
+    try {
+      const gitUser = this._execSync("git config user.name", workdir, 3000).trim();
+      if (gitUser) { return gitUser; }
+    } catch {}
+
+    // 3. gh CLI if available
+    try {
+      const ghUser = this._execSync("gh api user -q .login", workdir, 4000).trim();
+      if (ghUser) { return ghUser; }
+    } catch {}
+
+    // 4. OS user / fallback
+    return os.userInfo().username || "developer";
+  }
+
+  private _getGitRemote(workdir: string): string | null {
+    try {
+      const remote = this._execSync("git remote get-url origin", workdir, 3000).trim();
+      return remote || null;
+    } catch {
+      return null;
+    }
+  }
+
+  private _getGitBranch(workdir: string): string {
+    try {
+      const branch = this._execSync("git rev-parse --abbrev-ref HEAD", workdir, 3000).trim();
+      return branch || "main";
+    } catch {
+      return "main";
+    }
+  }
+
+  private _promptGitPush(workdir: string) {
+    const askBeforePush = vscode.workspace.getConfiguration("alpiecode").get<boolean>("askBeforePush", true);
+    if (!askBeforePush) { return; }
+    if (this._modifiedFiles.length === 0) { return; }
+
+    let isGit = false;
+    try {
+      this._execSync("git rev-parse --is-inside-work-tree", workdir, 3000);
+      isGit = true;
+    } catch {
+      try {
+        this._execSync("git init", workdir, 4000);
+        isGit = true;
+      } catch {}
+    }
+
+    if (!isGit) { return; }
+
+    const username = this._getGitUsername(workdir);
+    const remote = this._getGitRemote(workdir);
+    const branch = this._getGitBranch(workdir);
+
+    this._post({
+      action: "gitPushPrompt",
+      data: {
+        username,
+        remote,
+        branch,
+        workdir,
+        fileCount: this._modifiedFiles.length
+      }
+    });
+  }
+
+  private async _handleChangeGitUsername(workdir: string, currentUsername: string, branch?: string) {
+    const newUsername = await vscode.window.showInputBox({
+      prompt: "Enter GitHub Username / Push ID:",
+      value: currentUsername || "",
+      placeHolder: "e.g. octocat or your-github-handle",
+      validateInput: (val) => val && val.trim().length > 0 ? null : "Username cannot be empty"
+    });
+
+    if (!newUsername || !newUsername.trim()) {
+      return;
+    }
+    const cleaned = newUsername.trim();
+
+    try {
+      await vscode.workspace.getConfiguration("alpiecode").update("githubUsername", cleaned, vscode.ConfigurationTarget.Global);
+    } catch {}
+
+    try {
+      this._execSync('git config user.name "' + cleaned + '"', workdir);
+    } catch {}
+
+    const remote = this._getGitRemote(workdir);
+    const curBranch = branch || this._getGitBranch(workdir);
+
+    this._post({
+      action: "gitPushPrompt",
+      data: { username: cleaned, remote, branch: curBranch, workdir, isUpdated: true }
+    });
+  }
+
+  private async _executeGitPush(workdir: string, username: string, branch?: string) {
+    const curBranch = branch || this._getGitBranch(workdir);
+    let remote = this._getGitRemote(workdir);
+
+    if (!remote) {
+      const inputRemote = await vscode.window.showInputBox({
+        prompt: "No remote 'origin' found. Enter GitHub repository URL for @" + username + ":",
+        placeHolder: "https://github.com/" + username + "/my-repo.git",
+        validateInput: (val) => val && val.trim().length > 0 ? null : "Repository URL cannot be empty"
+      });
+      if (!inputRemote || !inputRemote.trim()) {
+        this._post({
+          action: "agentEvent",
+          event: { type: "message", data: { content: "❌ Push cancelled: No remote repository specified." } }
+        });
+        return;
+      }
+      let targetRemote = inputRemote.trim();
+      if (!targetRemote.startsWith("http://") && !targetRemote.startsWith("https://") && !targetRemote.startsWith("git@")) {
+        targetRemote = "https://github.com/" + targetRemote + ".git";
+      }
+      try {
+        this._execSync("git remote add origin " + targetRemote, workdir);
+        remote = targetRemote;
+      } catch (e: any) {
+        vscode.window.showErrorMessage("Failed to add git remote: " + (e?.message || e));
+        return;
+      }
+    }
+
+    this._post({
+      action: "agentEvent",
+      event: { type: "message", data: { content: "\n📤 **Pushing to GitHub**: `" + remote + "` as `@" + username + "` (branch: `" + curBranch + "`)...\n" } }
+    });
+
+    try {
+      this._execSync("git add -A", workdir);
+      try {
+        this._execSync('git -c user.name="' + username + '" commit -m "feat: updates by AlpieCode agent" --allow-empty', workdir);
+      } catch {}
+
+      const pushOutput = this._execSync("git push -u origin " + curBranch, workdir, 30000);
+      this._post({
+        action: "gitPushResult",
+        success: true,
+        message: "Successfully pushed to GitHub (`" + curBranch + "`) as `@" + username + "`!",
+        output: (pushOutput || "").trim()
+      });
+      vscode.window.showInformationMessage("AlpieCode: Pushed code to GitHub as @" + username + "!");
+    } catch (err: any) {
+      const errMsg = err?.stderr?.toString() || err?.message || String(err);
+      this._post({
+        action: "gitPushResult",
+        success: false,
+        error: "Push failed: " + errMsg
+      });
+      vscode.window.showErrorMessage("AlpieCode: Git push failed: " + errMsg.slice(0, 120));
+    }
+  }
 
   /* ---- WSL Detection & Command Wrapping ---- */
 

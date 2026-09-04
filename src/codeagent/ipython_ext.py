@@ -11,6 +11,7 @@ and Google Colab via cell/line magic commands and rich interactive displays:
 """
 
 import html
+import time
 import re
 import sys
 import warnings
@@ -114,20 +115,28 @@ def _extract_primary_code_block(text: str) -> Optional[str]:
     return None
 
 
-def _render_colab_card(task: str, tool_actions: List[Dict[str, str]], content: str) -> str:
-    """Render a modern, sleek Colab/Jupyter responsive card."""
+# Active session cache for multi-cell conversational memory
+_ACTIVE_NOTEBOOK_SESSION = None
+
+def _render_colab_card(task: str, tool_actions: List[Dict[str, str]], status: str = "done") -> str:
+    """Render a modern, sleek Colab/Jupyter responsive card with live pulse indicator."""
     task_escaped = html.escape(task[:140])
     
+    badge_label = "Running..." if status == "running" else "Goal-Driven"
+    badge_color = "#38bdf8" if status == "running" else "#64748b"
+
     actions_html = ""
     if tool_actions:
         actions_html = '<div style="margin-top: 8px; margin-bottom: 8px; font-family: ui-monospace, monospace; font-size: 12px;">'
         for act in tool_actions:
             name = html.escape(act.get("name", ""))
             summary = html.escape(act.get("summary", ""))
-            status = act.get("status", "✓")
+            st = act.get("status", "✓")
+            dot_color = "#fbbf24" if st == "running" else "#38bdf8"
+            icon = "⏳" if st == "running" else "⏺"
             actions_html += (
                 f'<div style="display: flex; align-items: center; gap: 6px; padding: 3px 0; color: #94a3b8;">'
-                f'<span style="color: #38bdf8;">⏺</span> '
+                f'<span style="color: {dot_color}; font-size: 11px;">{icon}</span> '
                 f'<strong style="color: #f1f5f9;">{name}</strong> '
                 f'<span style="color: #64748b;">{summary}</span>'
                 f'</div>'
@@ -143,8 +152,8 @@ def _render_colab_card(task: str, tool_actions: List[Dict[str, str]], content: s
         f'<span style="font-weight: 600; font-size: 13px; color: #38bdf8; display: flex; align-items: center; gap: 6px;">'
         f'⚡ AlpieCode Agent'
         f'</span>'
-        f'<span style="font-size: 11px; color: #64748b; background: #1e293b; padding: 2px 8px; border-radius: 9999px;">'
-        f'Goal-Driven'
+        f'<span style="font-size: 11px; color: {badge_color}; background: #1e293b; padding: 2px 8px; border-radius: 9999px;">'
+        f'{badge_label}'
         f'</span>'
         f'</div>'
         f'<div style="font-size: 13px; color: #cbd5e1; margin-top: 8px; font-weight: 500;">{task_escaped}</div>'
@@ -186,17 +195,37 @@ def alpie_magic(line: str, cell: Optional[str] = None):
         run_agent(full_task, workdir, cfg, verbose=True)
         return
 
-    # In Jupyter or Google Colab: run with rich streaming & UI
+    # In Jupyter or Google Colab: run with live in-place streaming & UI
+    global _ACTIVE_NOTEBOOK_SESSION
     from IPython import get_ipython
+    from IPython.display import HTML, Markdown, display, update_display
     ip = get_ipython()
 
     backend = resolve_backend(cfg)
     orchestrator = AgentOrchestrator(backend)
     session_mgr = SessionManager()
-    session = session_mgr.create_session(workdir, max_tokens=cfg.n_ctx if not backend.is_available else 262_144)
+
+    # Support --reset or --new flag for cross-cell memory reset
+    if raw_task.startswith("--reset") or raw_task.startswith("--new"):
+        _ACTIVE_NOTEBOOK_SESSION = None
+        raw_task = re.sub(r"^(--reset|--new)\s*", "", raw_task).strip()
+        full_task = f"{raw_task}\n{nb_context}" if nb_context else raw_task
+
+    if _ACTIVE_NOTEBOOK_SESSION is None:
+        _ACTIVE_NOTEBOOK_SESSION = session_mgr.create_session(
+            workdir, max_tokens=cfg.n_ctx if not backend.is_available else 262_144
+        )
+    session = _ACTIVE_NOTEBOOK_SESSION
 
     tool_actions: List[Dict[str, str]] = []
     final_content = ""
+    display_id = f"alpie_card_{int(time.time() * 1000)}"
+
+    # Initial in-place widget render
+    try:
+        display(HTML(_render_colab_card(raw_task, tool_actions, status="running")), display_id=display_id)
+    except Exception:
+        pass
 
     for event in orchestrator.run_task(session=session, task=full_task, cfg=cfg):
         if event.type == "tool_call":
@@ -212,10 +241,22 @@ def alpie_magic(line: str, cell: Optional[str] = None):
             summary = ""
             if t_name == "bash":
                 cmd = t_args.get("command", "")
-                summary = f"$ {cmd[:60]}..." if len(cmd) > 60 else f"$ {cmd}"
+                summary = f"$ {cmd[:50]}..." if len(cmd) > 50 else f"$ {cmd}"
             elif t_name in ("write_file", "edit_file", "read_file"):
                 summary = str(t_args.get("path", ""))
-            tool_actions.append({"name": t_name, "summary": summary})
+            tool_actions.append({"name": t_name, "summary": summary, "status": "running"})
+            try:
+                update_display(HTML(_render_colab_card(raw_task, tool_actions, status="running")), display_id=display_id)
+            except Exception:
+                pass
+
+        elif event.type == "tool_result":
+            if tool_actions:
+                tool_actions[-1]["status"] = "✓"
+                try:
+                    update_display(HTML(_render_colab_card(raw_task, tool_actions, status="running")), display_id=display_id)
+                except Exception:
+                    pass
 
         elif event.type == "message":
             final_content = event.data.get("content", "")
@@ -229,8 +270,12 @@ def alpie_magic(line: str, cell: Optional[str] = None):
     if cleaned_content.upper().startswith("DONE:"):
         cleaned_content = cleaned_content[5:].strip()
 
-    # Render modern card & markdown
-    _display_html(_render_colab_card(raw_task, tool_actions, cleaned_content))
+    # Final in-place update with done state
+    try:
+        update_display(HTML(_render_colab_card(raw_task, tool_actions, status="done")), display_id=display_id)
+    except Exception:
+        _display_html(_render_colab_card(raw_task, tool_actions, status="done"))
+
     if cleaned_content:
         _display_markdown(cleaned_content)
 
@@ -299,6 +344,20 @@ def alpie_explain_magic(line: str):
     alpie_magic(explain_task)
 
 
+
+def alpie_reset_magic(line: str = ""):
+    """%alpie_reset — Reset conversation memory for the notebook session."""
+    global _ACTIVE_NOTEBOOK_SESSION
+    _ACTIVE_NOTEBOOK_SESSION = None
+    if _is_notebook():
+        _display_html(
+            '<div style="background: #0f172a; border-left: 3px solid #10b981; border-radius: 6px; padding: 6px 12px; font-family: sans-serif; font-size: 12px; color: #10b981;">'
+            '🔄 AlpieCode notebook conversation memory cleared.'
+            '</div>'
+        )
+    else:
+        print("🔄 AlpieCode notebook conversation memory cleared.")
+
 def alpie_doctor_magic(line: str = ""):
     """%alpie_doctor — Run system health diagnostic checks."""
     from .doctor import run_doctor
@@ -311,6 +370,7 @@ def load_ipython_extension(ipython):
     ipython.register_magic_function(alpie_plan_magic, magic_kind="line_cell", magic_name="alpie_plan")
     ipython.register_magic_function(alpie_explain_magic, magic_kind="line", magic_name="alpie_explain")
     ipython.register_magic_function(alpie_doctor_magic, magic_kind="line", magic_name="alpie_doctor")
+    ipython.register_magic_function(alpie_reset_magic, magic_kind="line", magic_name="alpie_reset")
     if _is_notebook():
         _display_html(
             '<div style="background: #0f172a; border-left: 4px solid #38bdf8; border-radius: 6px; padding: 8px 12px; margin: 4px 0; font-family: sans-serif; font-size: 13px; color: #e2e8f0;">'

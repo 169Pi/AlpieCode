@@ -16,6 +16,7 @@ from .config import Config, is_server_reachable
 from .memory import extract_and_save_memories
 from .discovery import build_task_context, COMPLEXITY_CONFIG
 from .progress import ProgressMonitor
+from .rephraser import PromptRephraser
 from .prompt import PromptBuilder, classify_task
 from .session import Session, SessionManager
 
@@ -43,6 +44,7 @@ class AgentOrchestrator:
     ):
         self.backend = backend
         self.prompt_builder = prompt_builder or PromptBuilder()
+        self.rephraser = PromptRephraser()
 
     def run_task(
         self,
@@ -116,9 +118,26 @@ class AgentOrchestrator:
             task_context=task_context,
         )
         session.context.set_system_prompt(system_prompt)
+        # ── Phase 0.5: Internal Prompt Rephraser (first step, internal only) ──
+        yield AgentEvent("status", {
+            "phase": "rephrasing",
+            "message": "Solidifying task requirements...",
+            "task": task,
+        })
+        rephrased_task = task
+        try:
+            rephrased_task = self.rephraser.rephrase(task, self.backend, task_context)
+        except Exception:
+            rephrased_task = task
+
+        yield AgentEvent("status", {
+            "phase": "building",
+            "message": "Starting build...",
+            "rephrased": rephrased_task,
+        })
 
         user_content = self.prompt_builder.build_user_content(
-            task=task,
+            task=rephrased_task,
             image_path=image_path,
             video_path=video_path,
             url=url,
@@ -134,6 +153,7 @@ class AgentOrchestrator:
             "is_offline": is_offline,
             "tool_count": len(active_tools),
             "complexity": complexity,
+            "rephrased_task": rephrased_task,
         })
 
 

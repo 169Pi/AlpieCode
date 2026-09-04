@@ -303,6 +303,19 @@ def run_agent(
         elif event.type == "adaptive_mode" and verbose and HAS_RICH:
             console.print("⚡ [dim]Adaptive mode: simple task detected, skipping deep reasoning for speed[/dim]")
 
+        elif event.type == "status":
+            phase = event.data.get("phase")
+            if debug and phase == "building" and event.data.get("rephrased") and event.data.get("rephrased") != task:
+                if HAS_RICH:
+                    console.print(Panel(
+                        f"[bold cyan]🎯 Solidified Engineering Specification[/bold cyan]\n{event.data.get('rephrased')}",
+                        title="Internal Rephraser",
+                        border_style="dim blue",
+                        padding=(0, 1)
+                    ))
+                else:
+                    print(f"[Rephraser] {event.data.get('rephrased')}")
+
         elif event.type == "turn_start":
             current_turn = event.data["turn"]
             if debug:

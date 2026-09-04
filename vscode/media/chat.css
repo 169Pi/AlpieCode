@@ -1094,3 +1094,190 @@ body {
 .tool-badge-drawer.hidden {
   display: none;
 }
+
+/* ---- Selection Pill & Native Diff Action Button ---- */
+.selection-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  color: #38bdf8;
+  padding: 3px 8px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-family: var(--vscode-editor-font-family, monospace);
+  margin-bottom: 6px;
+  animation: fadeIn 0.15s ease-out;
+}
+.selection-pill-close {
+  cursor: pointer;
+  opacity: 0.7;
+  font-size: 10px;
+}
+.selection-pill-close:hover {
+  opacity: 1;
+}
+
+.cp-btn.cp-diff {
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  color: #38bdf8;
+}
+.cp-btn.cp-diff:hover {
+  background: rgba(56, 189, 248, 0.22);
+}
+
+/* ---- Live Build Status Bar ---- */
+.live-build-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  margin: 6px 10px 4px 10px;
+  background: rgba(30, 41, 59, 0.7);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  border-radius: 8px;
+  font-size: 11px;
+  color: #38bdf8;
+  backdrop-filter: blur(8px);
+  animation: pulse-border 2s infinite ease-in-out;
+}
+
+@keyframes pulse-border {
+  0%, 100% { border-color: rgba(56, 189, 248, 0.2); }
+  50% { border-color: rgba(56, 189, 248, 0.6); }
+}
+
+.live-build-spinner {
+  font-size: 13px;
+  display: inline-block;
+  animation: spin-build 2.5s infinite linear;
+}
+
+@keyframes spin-build {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.live-build-text {
+  font-family: var(--vscode-editor-font-family, monospace);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---- GitHub Push Card ---- */
+.github-push-card {
+  margin: 12px 8px;
+  padding: 12px;
+  background: var(--vscode-editor-background, #1e1e1e);
+  border: 1px solid rgba(88, 166, 255, 0.35);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.github-push-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 13px;
+  color: #58a6ff;
+}
+
+.github-icon {
+  font-size: 16px;
+}
+
+.github-push-body {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--vscode-foreground, #ccc);
+}
+
+.github-push-question {
+  margin: 0 0 6px 0;
+}
+
+.github-user-tag {
+  color: #7ee787;
+  font-family: var(--vscode-editor-font-family, monospace);
+  background: rgba(126, 231, 135, 0.1);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.github-push-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 11px;
+  opacity: 0.8;
+}
+
+.github-push-meta code {
+  background: rgba(255, 255, 255, 0.08);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+.github-push-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.push-btn-confirm {
+  background: #238636;
+  color: #fff;
+  border: none;
+  padding: 5px 12px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 500;
+  transition: background 0.15s ease;
+}
+
+.push-btn-confirm:hover {
+  background: #2ea043;
+}
+
+.push-btn-change {
+  background: var(--vscode-button-secondaryBackground, #30363d);
+  color: var(--vscode-button-secondaryForeground, #c9d1d9);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  padding: 5px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 11px;
+  transition: background 0.15s ease;
+}
+
+.push-btn-change:hover {
+  background: var(--vscode-button-secondaryHoverBackground, #3c444d);
+}
+
+.push-btn-skip {
+  background: transparent;
+  color: var(--vscode-descriptionForeground, #8b949e);
+  border: none;
+  padding: 5px 8px;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.push-btn-skip:hover {
+  color: var(--vscode-foreground, #fff);
+}
+
+.push-spinner {
+  font-size: 11px;
+  color: #58a6ff;
+}

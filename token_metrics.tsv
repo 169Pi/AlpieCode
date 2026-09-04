@@ -1,0 +1,23 @@
+Task Category	Mode	Avg Prompt Tokens	Avg Output Tokens	Avg Total Tokens	Avg Latency	Avg Decoding Speed	Token Expansion Factor
+Normal Q&A	Non-Thinking	61 tok	693 tok	754 tok	8.8s	75.4 tok/s	1.0× (Baseline)
+Normal Q&A	Thinking	59 tok	1,435 tok	1,494 tok	17.4s	82.2 tok/s	2.07× (+107%)
+Reasoning Tasks	Non-Thinking	90 tok	1,409 tok	1,499 tok	17.1s	82.3 tok/s	1.0× (Baseline)
+Reasoning Tasks	Thinking	88 tok	3,050 tok	3,138 tok	36.9s	82.7 tok/s	2.16× (+116%)
+
+Task Category	Task Description	Mode	Prompt Tokens	Output Tokens	Total Tokens	Latency	Speed	Output Profile
+Normal Q&A	API Gateway in Microservices	Non-Thinking	63 tok	242 tok	305 tok	4.4s	54.7 t/s	Direct 3-bullet summary
+Normal Q&A	API Gateway in Microservices	Thinking	61 tok	1,065 tok	1,126 tok	13.0s	82.0 t/s	Structured thinking + detailed architecture
+Normal Q&A	Shallow vs. Deep Copy (Python)	Non-Thinking	60 tok	824 tok	884 tok	10.0s	82.4 t/s	Direct explanation + memory diagrams
+Normal Q&A	Shallow vs. Deep Copy (Python)	Thinking	58 tok	1,788 tok	1,846 tok	21.6s	82.7 t/s	Chain-of-thought analysis + nested examples
+Normal Q&A	TCP vs. UDP Protocol Comparison	Non-Thinking	60 tok	893 tok	953 tok	10.9s	82.3 t/s	Direct side-by-side comparison table
+Normal Q&A	TCP vs. UDP Protocol Comparison	Thinking	58 tok	877 tok	935 tok	10.8s	81.4 t/s	Focused derivation of trade-offs
+Normal Q&A	Python Decorators Mechanism	Non-Thinking	62 tok	813 tok	875 tok	9.9s	82.1 t/s	Code syntax + timer wrapper
+Normal Q&A	Python Decorators Mechanism	Thinking	60 tok	2,010 tok	2,070 tok	24.3s	82.8 t/s	Metaprogramming derivation + edge cases
+Reasoning Tasks	Best Time to Buy/Sell Stock (2 Trans)	Non-Thinking	81 tok	1,946 tok	2,027 tok	23.4s	83.1 t/s	Direct dynamic programming formulation
+Reasoning Tasks	Best Time to Buy/Sell Stock (2 Trans)	Thinking	79 tok	4,096 tok	4,175 tok	49.5s	82.7 t/s	Exhaustive state transitions (O(N) time / O(1) space)
+Reasoning Tasks	Multi-Color Probability (Marbles)	Non-Thinking	90 tok	821 tok	911 tok	10.1s	81.6 t/s	Quick formula calculation
+Reasoning Tasks	Multi-Color Probability (Marbles)	Thinking	88 tok	2,155 tok	2,243 tok	26.0s	82.8 t/s	Step-by-step combinatorial derivation (5 × 4 × 3 / C(12, 3))
+Reasoning Tasks	Concurrent Race Condition Fix	Non-Thinking	93 tok	875 tok	968 tok	10.7s	81.8 t/s	Thread interleaving explanation + threading.Lock
+Reasoning Tasks	Concurrent Race Condition Fix	Thinking	91 tok	1,853 tok	1,944 tok	22.4s	82.7 t/s	Atomic instruction analysis + context manager pattern
+Reasoning Tasks	Unique Grid Paths with Obstacles	Non-Thinking	95 tok	1,995 tok	2,090 tok	24.1s	82.7 t/s	2D DP matrix formulation + boundary handling
+Reasoning Tasks	Unique Grid Paths with Obstacles	Thinking	93 tok	4,096 tok	4,189 tok	49.5s	82.8 t/s	2D DP state space derivation + obstacle checks

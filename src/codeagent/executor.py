@@ -116,24 +116,26 @@ class ToolExecutor:
         on_tool_start: Optional[Callable[[str, dict], None]] = None,
         on_tool_end: Optional[Callable[[str, str], None]] = None,
     ) -> List[ToolResult]:
-        """Execute a list of tool calls using parallel dispatch for read-only tools."""
+        """Execute a list of tool calls with staged DAG parallelization:
+        - Stage 1: All read-only tools run concurrently in a ThreadPool
+        - Stage 2: Mutating tools run sequentially in order
+        Results are returned matching the exact original order of tool_calls.
+        """
         if not tool_calls:
             return []
 
-        all_read_only = all(tc.name in READ_ONLY_TOOLS for tc in tool_calls)
-        use_parallel = all_read_only and len(tool_calls) > 1
+        results_map: Dict[str, ToolResult] = {}
+        read_calls = [tc for tc in tool_calls if tc.name in READ_ONLY_TOOLS]
+        mut_calls = [tc for tc in tool_calls if tc.name not in READ_ONLY_TOOLS]
 
-        results: List[ToolResult] = []
-
-        if use_parallel:
-            results_map: Dict[str, Tuple[str, float]] = {}
-            with ThreadPoolExecutor(max_workers=min(8, len(tool_calls))) as pool:
+        # Stage 1: Parallel read-only execution
+        if len(read_calls) > 1:
+            with ThreadPoolExecutor(max_workers=min(8, len(read_calls))) as pool:
                 future_to_tc = {}
-                for tc in tool_calls:
+                for tc in read_calls:
                     if on_tool_start:
                         on_tool_start(tc.name, tc.arguments)
                     t0 = time.monotonic()
-                    # Defensive: ensure arguments is always a dict
                     safe_args = tc.arguments if isinstance(tc.arguments, dict) else {}
                     fn = self.dispatch.get(tc.name)
                     if fn:
@@ -149,14 +151,84 @@ class ToolExecutor:
                         res_str = str(future.result())
                     except Exception as e:
                         res_str = f"error: {e}"
-                    results_map[tc.id] = (res_str, elapsed)
+                    if on_tool_end:
+                        on_tool_end(tc.name, res_str)
+                    results_map[tc.id] = ToolResult(
+                        tool_call_id=tc.id, name=tc.name, content=res_str, duration_ms=elapsed
+                    )
+        elif len(read_calls) == 1:
+            tc = read_calls[0]
+            if on_tool_start:
+                on_tool_start(tc.name, tc.arguments)
+            t0 = time.monotonic()
+            safe_args = tc.arguments if isinstance(tc.arguments, dict) else {}
+            fn = self.dispatch.get(tc.name)
+            res_str = str(fn(safe_args)) if fn else f"error: Unknown tool '{tc.name}'"
+            elapsed = (time.monotonic() - t0) * 1000
+            if on_tool_end:
+                on_tool_end(tc.name, res_str)
+            results_map[tc.id] = ToolResult(
+                tool_call_id=tc.id, name=tc.name, content=res_str, duration_ms=elapsed
+            )
 
-            for tc in tool_calls:
-                res_str, elapsed = results_map[tc.id]
-                if on_tool_end:
-                    on_tool_end(tc.name, res_str)
-                results.append(ToolResult(tool_call_id=tc.id, name=tc.name, content=res_str, duration_ms=elapsed))
-            return results
+        # Stage 2: Sequential mutating tools (write_file, edit_file, bash)
+        for tc in mut_calls:
+            if on_tool_start:
+                on_tool_start(tc.name, tc.arguments)
+            t0 = time.monotonic()
+            safe_args = tc.arguments if isinstance(tc.arguments, dict) else {}
+            fn = self.dispatch.get(tc.name)
+            if fn:
+                try:
+                    res_str = str(fn(safe_args))
+                except Exception as e:
+                    res_str = f"error: {e}"
+            else:
+                res_str = f"error: Unknown tool '{tc.name}'"
+            elapsed = (time.monotonic() - t0) * 1000
+
+            # Tool loop detection guard
+            call_sig = (tc.name, json.dumps(tc.arguments, sort_keys=True))
+            self.tool_call_history.append(call_sig)
+            repeat_count = sum(1 for item in self.tool_call_history[-5:] if item == call_sig)
+
+            if repeat_count >= 3:
+                res_str += (
+                    f"\n\n🛑 REPEATED TOOL CALL LOOP DETECTED (attempt #{repeat_count}). "
+                    f"You have already executed '{tc.name}' with these exact parameters {repeat_count} times in a row. "
+                    "All checks have passed. Do NOT run this tool again. Output your final summary starting with: DONE: <summary>."
+                )
+
+            # Compilation failure recovery hint
+            if tc.name == "bash":
+                cmd = tc.arguments.get("command", "") if isinstance(tc.arguments, dict) else ""
+                is_compile = any(kw in cmd for kw in ["g++", "gcc", "clang", "make", "cmake", "cargo build", "rustc"])
+                if is_compile and "exit_code" in str(res_str):
+                    try:
+                        result_data = json.loads(res_str.split("\n", 1)[-1] if res_str.startswith("⚠️") else res_str)
+                        if result_data.get("exit_code", 0) != 0:
+                            compile_key = cmd.strip()
+                            self.compile_fail_counts[compile_key] = self.compile_fail_counts.get(compile_key, 0) + 1
+                            if self.compile_fail_counts[compile_key] >= 3:
+                                res_str += (
+                                    "\n\n🛑 REPEATED COMPILATION FAILURE (attempt "
+                                    f"#{self.compile_fail_counts[compile_key]}). "
+                                    "STOP making blind edits. Re-read the ENTIRE source file with "
+                                    "read_file to understand its full structure, then fix ALL errors "
+                                    "comprehensively in one edit."
+                                )
+                        else:
+                            self.compile_fail_counts.pop(cmd.strip(), None)
+                    except (json.JSONDecodeError, ValueError):
+                        pass
+
+            if on_tool_end:
+                on_tool_end(tc.name, res_str)
+            results_map[tc.id] = ToolResult(
+                tool_call_id=tc.id, name=tc.name, content=res_str, duration_ms=elapsed
+            )
+
+        return [results_map[tc.id] for tc in tool_calls if tc.id in results_map]
 
         # Sequential execution
         for tc in tool_calls:

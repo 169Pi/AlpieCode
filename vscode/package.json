@@ -2,7 +2,7 @@
   "name": "alpiecode",
   "displayName": "AlpieCode",
   "description": "AI coding agent powered by 169Pi \u2014 chat, multimodal vision, fix bugs, generate tests, sandbox execution",
-  "version": "0.8.5",
+  "version": "0.8.6",
   "publisher": "169pi",
   "license": "MIT",
   "engines": {
@@ -113,6 +113,21 @@
           "type": "boolean",
           "default": false,
           "description": "Show side-by-side diff preview (Accept/Reject) before applying file changes. When disabled, code is written directly to disk."
+        },
+        "alpiecode.githubUsername": {
+          "type": "string",
+          "default": "",
+          "description": "Default GitHub username / push ID for pushing code to GitHub."
+        },
+        "alpiecode.askBeforePush": {
+          "type": "boolean",
+          "default": true,
+          "description": "Ask for confirmation before pushing code to GitHub."
+        },
+        "alpiecode.enableRephraser": {
+          "type": "boolean",
+          "default": true,
+          "description": "Internally solidify and rephrase prompt requirements before execution."
         }
       }
     }

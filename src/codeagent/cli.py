@@ -29,7 +29,7 @@ def _show_banner():
 
 
 def _normalize_args():
-    known_commands = {"init", "serve", "run", "chat", "plan", "diff", "doctor", "explain", "version", "-h", "--help", "-v", "--version"}
+    known_commands = {"init", "serve", "run", "chat", "plan", "diff", "undo", "doctor", "explain", "version", "-h", "--help", "-v", "--version"}
     subcommand = None
     
     # Check if a subcommand is present
@@ -114,6 +114,9 @@ def main():
 
     # ── diff ──
     diff_p = sub.add_parser("diff", help="Show changes AlpieCode has made since last checkpoint", parents=[common])
+
+    # ── undo ──
+    undo_p = sub.add_parser("undo", help="Revert file changes made by the last AlpieCode session", parents=[common])
 
     # ── doctor ──
     sub.add_parser("doctor", help="Run system health checks (CUDA, Python, network, dev tools)")
@@ -205,6 +208,16 @@ def main():
             github_repo=getattr(args, "github", None),
             debug=getattr(args, "debug", False),
         )
+
+    elif args.command == "diff":
+        from .git_ops import show_diff
+        show_diff(Path(args.workdir).resolve())
+        return
+
+    elif args.command == "undo":
+        from .git_ops import undo_last_session
+        undo_last_session(Path(args.workdir).resolve())
+        return
 
     elif args.command == "doctor":
         from .doctor import run_doctor
