@@ -61,7 +61,7 @@ class AgentOrchestrator:
 
         # ── Phase 0: Discovery — pre-compute task intelligence ──
         task_context = build_task_context(task, session.workdir)
-        complexity = task_context.complexity
+        complexity = complexity or task_context.complexity
 
         yield AgentEvent("discovery", {
             "intent": task_context.intent,
@@ -159,10 +159,13 @@ class AgentOrchestrator:
 
 
         # ── Adaptive thinking ──
-        enable_thinking = cfg.enable_thinking or task_context.enable_thinking
-        if enable_thinking and complexity in ("qa", "low"):
-            enable_thinking = False
-            yield AgentEvent("adaptive_mode", {"message": "Simple task detected, skipping deep reasoning."})
+        if cfg.enable_thinking:
+            enable_thinking = True
+        else:
+            enable_thinking = task_context.enable_thinking
+            if enable_thinking and complexity in ("qa", "low"):
+                enable_thinking = False
+                yield AgentEvent("adaptive_mode", {"message": "Simple task detected, skipping deep reasoning."})
 
         # ── Goal-driven turn loop (no fixed limit) ──
         progress_monitor = ProgressMonitor()

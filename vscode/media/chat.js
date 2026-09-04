@@ -369,19 +369,32 @@
 
   // ---- Live Build Status Bar ----
   function updateBuildStatus(data) {
-    if (!liveBuildBar || !liveBuildText) return;
+    var bar = document.getElementById("live-build-bar");
+    var txt = document.getElementById("live-build-text");
+    if (!bar || !txt) return;
+
     if (!data || data.status === "complete" || data.status === "idle") {
-      liveBuildBar.classList.add("hidden");
+      if (data && data.status === "complete") {
+        var sp = bar.querySelector(".live-build-spinner");
+        if (sp) sp.textContent = "✅";
+        txt.textContent = data.message || "Complete";
+        setTimeout(function() {
+          bar.classList.add("hidden");
+        }, 2000);
+      } else {
+        bar.classList.add("hidden");
+      }
       return;
     }
-    liveBuildBar.classList.remove("hidden");
+
+    bar.classList.remove("hidden");
     var status = data.status || "building";
     var msg = data.message || "Building...";
-    var spinner = liveBuildBar.querySelector(".live-build-spinner");
+    var spinner = bar.querySelector(".live-build-spinner");
     if (spinner) {
-      spinner.textContent = status === "rephrasing" ? "🔄" : "🔨";
+      spinner.textContent = status === "rephrasing" ? "🔄" : (status === "complete" ? "✅" : "🔨");
     }
-    liveBuildText.textContent = msg;
+    txt.textContent = msg;
   }
 
   // ---- Interactive GitHub Push Card ----
@@ -551,6 +564,8 @@
     inputEl.value = "";
     inputEl.style.height = "auto";
 
+    updateBuildStatus({ status: "rephrasing", message: "Solidifying prompt requirements..." });
+
     vscode.postMessage({
       action: "sendMessage",
       text: text || "Analyze this image",
@@ -588,6 +603,9 @@
   function handleAgentEvent(event) {
     if (!event) return;
     switch (event.type) {
+      case "status":
+        updateBuildStatus(event.data);
+        break;
       case "thinking":
         var thinkText = event.data.content || event.data.text || event.data.delta || "";
         if (thinkText) appendThinking(thinkText);

@@ -111,9 +111,38 @@ class OpenAIBackend:
                 )
 
         reasoning = getattr(msg, "reasoning", None) or getattr(msg, "reasoning_content", None)
+        content = msg.content or ""
+
+        # Extract embedded thinking/reasoning if not provided in separate fields
+        if not reasoning and content:
+            import re
+            if "</think>" in content:
+                # Handled when model starts thinking implicitly or with <think>
+                parts = content.split("</think>", 1)
+                reasoning = parts[0].replace("<think>", "").strip()
+                content = parts[1].strip()
+            elif "<think>" in content:
+                think_match = re.search(r"<think>(.*?)</think>", content, flags=re.DOTALL)
+                if think_match:
+                    reasoning = think_match.group(1).strip()
+                    content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
+            elif content.strip().lower().startswith("thinking process:") or "\nthinking process:" in content.lower():
+                if tool_calls:
+                    reasoning = re.sub(r"(?i)^thinking process:\s*", "", content).strip()
+                    content = ""
+                else:
+                    code_match = re.search(r"\n(?=```|Here is|Below is|I will|The following|DONE:|#!/usr|/\*|package\s|import\s[a-z]|from\s[a-z])", content, flags=re.IGNORECASE)
+                    if code_match:
+                        think_part = content[:code_match.start()]
+                        content_part = content[code_match.start():]
+                        reasoning = re.sub(r"(?i)^thinking process:\s*", "", think_part).strip()
+                        content = content_part.strip()
+                    else:
+                        reasoning = re.sub(r"(?i)^thinking process:\s*", "", content).strip()
+                        content = ""
 
         return ChatResponse(
-            content=msg.content,
+            content=content,
             reasoning=reasoning,
             tool_calls=tool_calls,
             raw=resp,

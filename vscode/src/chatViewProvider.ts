@@ -418,6 +418,21 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /* ---- Sandbox Execution ---- */
+  private _runInTerminal(cmd: string, workdir: string) {
+    let term = vscode.window.terminals.find(t => t.name === "AlpieCode Sandbox");
+    if (!term) {
+      term = vscode.window.createTerminal({
+        name: "AlpieCode Sandbox",
+      });
+    }
+    term.show(true);
+    if (this._isWslWorkspace()) {
+      term.sendText("wsl -d Ubuntu --cd \"" + workdir + "\" " + cmd);
+    } else {
+      term.sendText("cd \"" + workdir + "\" && " + cmd);
+    }
+  }
+
 
   private _detectRunCommand(files: string[], workdir: string): string | null {
     const mainPatterns = ["main", "app", "index", "server", "game"];
@@ -517,6 +532,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       action: "agentEvent",
       event: { type: "message", data: { content: "\n⚡ **Running in Terminal**: `" + runCmd + "`\n" } }
     });
+
+    // Run directly in interactive terminal panel so output is immediately visible
+    this._runInTerminal(runCmd, workdir);
 
     const execution = await vscode.tasks.executeTask(task);
 
@@ -1194,9 +1212,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   /** Wrap a shell command for WSL execution when workspace is via UNC path. */
   private _wslShellExec(cmd: string, workdir: string): vscode.ShellExecution {
     if (this._isWslWorkspace()) {
-      const escaped = cmd.replace(/'/g, "'\\''");
       return new vscode.ShellExecution(
-        "wsl", ["-e", "bash", "-c", "cd '" + workdir + "' && " + escaped]
+        "wsl", ["-d", "Ubuntu", "--cd", workdir, "bash", "-c", cmd]
       );
     }
     return new vscode.ShellExecution(cmd, { cwd: workdir });
@@ -1363,6 +1380,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       <button id="history-close-btn">\u2715</button>
     </div>
     <div id="history-list"></div>
+  </div>
+  <div id="live-build-bar" class="live-build-bar hidden">
+    <span class="live-build-spinner">🔨</span>
+    <span id="live-build-text" class="live-build-text">Building...</span>
   </div>
   <div id="chat-messages"></div>
   <div id="input-area">
