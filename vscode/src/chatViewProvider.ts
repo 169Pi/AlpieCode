@@ -106,6 +106,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   /** Auto-fix retry counter to prevent infinite loops. */
   private _autoFixRetries = 0;
 
+  /** Track whether GitHub push has been prompted for the current project/session. */
+  private _gitPushPrompted = false;
+
   /** Token & Speed Meter state. */
   private _tokenCount = 0;
   private _streamStartTime = 0;
@@ -282,33 +285,45 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
     const relPath: string = args.path;
     const absPath = this._toLocalPath(relPath);
+    const showDiffPreview = vscode.workspace
+      .getConfiguration("alpiecode")
+      .get<boolean>("showDiffPreview", false);
 
     if (name === "write_file") {
       const content = args.content || "";
-      const fileExists = fs.existsSync(absPath);
-      let existingContent = "";
-      if (fileExists) {
-        try { existingContent = fs.readFileSync(absPath, "utf-8"); } catch {}
-      }
+      const dir = path.dirname(absPath);
+      if (!fs.existsSync(dir)) { fs.mkdirSync(dir, { recursive: true }); }
 
-      if (!fileExists) {
-        // MODE 1: New file — write directly, no approval needed
-        const dir = path.dirname(absPath);
-        if (!fs.existsSync(dir)) { fs.mkdirSync(dir, { recursive: true }); }
+      if (!showDiffPreview) {
+        // Direct write mode: write directly without asking for accept approval
         fs.writeFileSync(absPath, content, "utf-8");
         try {
           const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(absPath));
           await vscode.window.showTextDocument(doc, { preview: false, preserveFocus: true });
         } catch {}
         this._modifiedFiles.push(relPath);
-        this._autoFixRetries = 0; // reset retries on new file creation
+        this._autoFixRetries = 0;
       } else {
-        // MODE 2: Existing file — show change plan for approval
-        this._pendingChange = {
-          workdir, relPath, absPath, newContent: content,
-          oldContent: existingContent, toolName: "write_file", isNewFile: false
-        };
-        this._sendChangePlan();
+        const fileExists = fs.existsSync(absPath);
+        let existingContent = "";
+        if (fileExists) {
+          try { existingContent = fs.readFileSync(absPath, "utf-8"); } catch {}
+        }
+        if (!fileExists) {
+          fs.writeFileSync(absPath, content, "utf-8");
+          try {
+            const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(absPath));
+            await vscode.window.showTextDocument(doc, { preview: false, preserveFocus: true });
+          } catch {}
+          this._modifiedFiles.push(relPath);
+          this._autoFixRetries = 0;
+        } else {
+          this._pendingChange = {
+            workdir, relPath, absPath, newContent: content,
+            oldContent: existingContent, toolName: "write_file", isNewFile: false
+          };
+          this._sendChangePlan();
+        }
       }
 
     } else if (name === "edit_file") {
@@ -318,13 +333,24 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       const newStr = args.new_str || "";
       const newContent = oldStr ? existing.replace(oldStr, newStr) : newStr;
 
-      // MODE 2: Edit to existing file — show change plan for approval
-      this._pendingChange = {
-        workdir, relPath, absPath, newContent,
-        oldContent: existing, toolName: "edit_file", isNewFile: false,
-        oldStr, newStr
-      };
-      this._sendChangePlan();
+      if (!showDiffPreview) {
+        // Direct edit mode: write directly without asking for accept approval
+        const dir = path.dirname(absPath);
+        if (!fs.existsSync(dir)) { fs.mkdirSync(dir, { recursive: true }); }
+        fs.writeFileSync(absPath, newContent, "utf-8");
+        try {
+          const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(absPath));
+          await vscode.window.showTextDocument(doc, { preview: false, preserveFocus: true });
+        } catch {}
+        this._modifiedFiles.push(relPath);
+      } else {
+        this._pendingChange = {
+          workdir, relPath, absPath, newContent,
+          oldContent: existing, toolName: "edit_file", isNewFile: false,
+          oldStr, newStr
+        };
+        this._sendChangePlan();
+      }
     }
   }
 
@@ -965,6 +991,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       case "confirmGitPush":
         this._executeGitPush(m.workdir || this._workdir(), m.username, m.branch);
         break;
+      case "dismissGitPush":
+        this._gitPushPrompted = true;
+        break;
+      case "requestGitPush":
+        this._promptGitPush(this._workdir(), true);
+        break;
       case "changeGitUsername":
         this._handleChangeGitUsername(m.workdir || this._workdir(), m.currentUsername, m.branch);
         break;
@@ -1047,10 +1079,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  private _promptGitPush(workdir: string) {
+  private _promptGitPush(workdir: string, force: boolean = false) {
     const askBeforePush = vscode.workspace.getConfiguration("alpiecode").get<boolean>("askBeforePush", true);
-    if (!askBeforePush) { return; }
-    if (this._modifiedFiles.length === 0) { return; }
+    if (!askBeforePush && !force) { return; }
+    if (this._modifiedFiles.length === 0 && !force) { return; }
+    // Only ask once at last after completing the project
+    if (this._gitPushPrompted && !force) { return; }
+    if (this._autoFixRetries > 0) { return; }
 
     let isGit = false;
     try {
@@ -1064,6 +1099,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
 
     if (!isGit) { return; }
+
+    this._gitPushPrompted = true;
 
     const username = this._getGitUsername(workdir);
     const remote = this._getGitRemote(workdir);
@@ -1276,6 +1313,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private _newConv(firstMsg: string): string {
     const id = "c_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7);
     const title = firstMsg.length > 60 ? firstMsg.slice(0, 60) + "\u2026" : firstMsg;
+    this._gitPushPrompted = false;
     this._conversations.unshift({ id, title, messages: [], createdAt: Date.now() });
     if (this._conversations.length > 50) { this._conversations.length = 50; }
     this._activeId = id;

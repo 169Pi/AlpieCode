@@ -123,6 +123,13 @@
       prompt: "Show git diff of recent changes made in this session"
     },
     {
+      cmd: "/push",
+      title: "push",
+      desc: "Push completed project changes to GitHub repository",
+      icon: "🐙",
+      action: "push"
+    },
+    {
       cmd: "/clear",
       title: "clear",
       desc: "Start a fresh, clean conversation session",
@@ -241,6 +248,10 @@
     hideSlashPopup();
     if (item.action === "clear") {
       newChatBtn.click();
+      return;
+    }
+    if (item.action === "push") {
+      vscode.postMessage({ action: "requestGitPush" });
       return;
     }
     inputEl.value = item.prompt || (item.cmd + " ");
