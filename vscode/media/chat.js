@@ -953,6 +953,37 @@
   var unifiedStartTime = 0;
   var unifiedTimerInterval = null;
 
+  function startWorkTimer() {
+    if (unifiedTimerInterval) clearInterval(unifiedTimerInterval);
+    if (!unifiedStartTime) unifiedStartTime = Date.now();
+    unifiedTimerInterval = setInterval(function() {
+      if (!unifiedWorkHeader) return;
+      var elapsed = Math.max(1, Math.round((Date.now() - unifiedStartTime) / 1000));
+      var titleEl = unifiedWorkHeader.querySelector(".thought-capsule-title");
+      if (titleEl && titleEl.classList.contains("running")) {
+        titleEl.textContent = "Thinking (" + elapsed + "s)...";
+      }
+    }, 1000);
+  }
+
+  function pauseWorkTimer() {
+    if (unifiedTimerInterval) {
+      clearInterval(unifiedTimerInterval);
+      unifiedTimerInterval = null;
+    }
+    if (!unifiedWorkHeader) return;
+    var elapsed = Math.max(1, Math.round((Date.now() - unifiedStartTime) / 1000));
+    var titleEl = unifiedWorkHeader.querySelector(".thought-capsule-title");
+    if (titleEl) {
+      titleEl.className = "thought-capsule-title";
+      titleEl.textContent = "Worked for " + elapsed + "s";
+    }
+    unifiedWorkHeader.classList.remove("expanded");
+    if (unifiedWorkContent) {
+      unifiedWorkContent.classList.add("collapsed");
+    }
+  }
+
   function ensureWorkCapsule() {
     if (unifiedWorkBlock) return;
 
@@ -966,7 +997,7 @@
     hdr.setAttribute("role", "button");
     hdr.setAttribute("tabindex", "0");
     hdr.innerHTML =
-      '<span class="thought-capsule-title running">Worked for 1s...</span>' +
+      '<span class="thought-capsule-title running">Thinking (1s)...</span>' +
       '<span class="thought-capsule-chevron">›</span>';
 
     var content = document.createElement("div");
@@ -987,16 +1018,7 @@
     unifiedWorkContent = content;
     currentThinkingEl = content;
 
-    if (unifiedTimerInterval) clearInterval(unifiedTimerInterval);
-    unifiedTimerInterval = setInterval(function() {
-      if (!unifiedWorkHeader) return;
-      var elapsed = Math.max(1, Math.round((Date.now() - unifiedStartTime) / 1000));
-      var titleEl = unifiedWorkHeader.querySelector(".thought-capsule-title");
-      if (titleEl && titleEl.classList.contains("running")) {
-        titleEl.textContent = "Worked for " + elapsed + "s...";
-      }
-    }, 1000);
-
+    startWorkTimer();
     scrollToBottom();
   }
 
@@ -1004,48 +1026,83 @@
     var delta = (data && data.delta) ? data.delta : (typeof data === "string" ? data : "");
     if (!delta) return;
     ensureWorkCapsule();
-    unifiedWorkContent.textContent += delta;
+
+    // Keep header active and expanded while reasoning is streaming
+    if (unifiedWorkHeader) {
+      unifiedWorkHeader.classList.add("expanded");
+      var titleEl = unifiedWorkHeader.querySelector(".thought-capsule-title");
+      if (titleEl && !titleEl.classList.contains("running")) {
+        titleEl.classList.add("running");
+        startWorkTimer();
+      }
+    }
+    if (unifiedWorkContent) {
+      unifiedWorkContent.classList.remove("collapsed");
+      unifiedWorkContent.textContent += delta;
+      unifiedWorkContent.scrollTop = unifiedWorkContent.scrollHeight;
+    }
     scrollToBottom();
   }
 
   function appendThinking(text) {
     if (!text) return;
     ensureWorkCapsule();
-    if (unifiedWorkContent.textContent.trim()) {
-      unifiedWorkContent.textContent += "\n\n" + text;
-    } else {
-      unifiedWorkContent.textContent = text;
+    if (unifiedWorkHeader) {
+      unifiedWorkHeader.classList.add("expanded");
+      var titleEl = unifiedWorkHeader.querySelector(".thought-capsule-title");
+      if (titleEl && !titleEl.classList.contains("running")) {
+        titleEl.classList.add("running");
+        startWorkTimer();
+      }
+    }
+    if (unifiedWorkContent) {
+      unifiedWorkContent.classList.remove("collapsed");
+      if (unifiedWorkContent.textContent.trim()) {
+        unifiedWorkContent.textContent += "
+
+" + text;
+      } else {
+        unifiedWorkContent.textContent = text;
+      }
+      unifiedWorkContent.scrollTop = unifiedWorkContent.scrollHeight;
     }
     scrollToBottom();
   }
 
   function finalizeWorkCapsule(durationSec) {
-    if (unifiedTimerInterval) {
-      clearInterval(unifiedTimerInterval);
-      unifiedTimerInterval = null;
-    }
-    if (!unifiedWorkHeader) return;
-
-    var elapsed = durationSec || Math.max(1, Math.round((Date.now() - unifiedStartTime) / 1000));
-    var titleEl = unifiedWorkHeader.querySelector(".thought-capsule-title");
-    if (titleEl) {
-      titleEl.className = "thought-capsule-title";
-      titleEl.textContent = "Worked for " + elapsed + "s";
-    }
-
-    // Cleanly collapse by default when finished (Antigravity standard)
-    unifiedWorkHeader.classList.remove("expanded");
-    if (unifiedWorkContent) {
-      unifiedWorkContent.classList.add("collapsed");
+    pauseWorkTimer();
+    if (durationSec && unifiedWorkHeader) {
+      var titleEl = unifiedWorkHeader.querySelector(".thought-capsule-title");
+      if (titleEl) {
+        titleEl.textContent = "Worked for " + durationSec + "s";
+      }
     }
   }
 
   function startThinkingCapsule(data) {
     ensureWorkCapsule();
+    if (unifiedWorkHeader) {
+      unifiedWorkHeader.classList.add("expanded");
+      var titleEl = unifiedWorkHeader.querySelector(".thought-capsule-title");
+      if (titleEl) {
+        titleEl.classList.add("running");
+        titleEl.textContent = "Thinking (1s)...";
+      }
+      startWorkTimer();
+    }
+    if (unifiedWorkContent) {
+      unifiedWorkContent.classList.remove("collapsed");
+    }
   }
 
   function endThinkingCapsule(data) {
-    // Keep unified work capsule running across tool turns; only finalize when answer/done arrives
+    // Keep content visible during execution; will collapse when assistant response starts
+    if (data && data.duration && unifiedWorkHeader) {
+      var titleEl = unifiedWorkHeader.querySelector(".thought-capsule-title");
+      if (titleEl) {
+        titleEl.textContent = "Worked for " + Math.round(data.duration) + "s";
+      }
+    }
   }
 
   // ---- Antigravity Artifact Card for walkthrough.md ----
@@ -1253,7 +1310,7 @@
 
   function appendAssistantToken(text) {
     if (unifiedWorkHeader && unifiedWorkHeader.querySelector(".thought-capsule-title.running")) {
-      finalizeWorkCapsule();
+      pauseWorkTimer();
     }
     currentThinkingEl = null;
     if (!currentAssistantEl) {
@@ -1263,8 +1320,15 @@
       currentAssistantText = "";
     }
     currentAssistantText += text;
-    currentAssistantEl.innerHTML = renderMarkdown(currentAssistantText) +
-      '<span class="streaming-dot"></span>';
+
+    var trimmed = currentAssistantText.trimEnd();
+    var rendered = renderMarkdown(trimmed);
+    if (rendered.endsWith("</p>")) {
+      rendered = rendered.slice(0, -4) + '<span class="streaming-dot"></span></p>';
+    } else {
+      rendered += '<span class="streaming-dot"></span>';
+    }
+    currentAssistantEl.innerHTML = rendered;
     scrollToBottom();
   }
 
@@ -1274,7 +1338,8 @@
       var dot = currentAssistantEl.querySelector(".streaming-dot");
       if (dot) dot.remove();
 
-      if (!currentAssistantText || !currentAssistantText.trim()) {
+      var trimmed = (currentAssistantText || "").trim();
+      if (!trimmed) {
         currentAssistantEl.remove();
       } else {
         var footer = "";
@@ -1283,7 +1348,7 @@
           var tok = lastTokenStats.tokenCount + " tokens";
           footer = '<div class="msg-token-footer"><span class="token-icon">⚡</span> ' + (spd ? spd + ' · ' : '') + tok + '</div>';
         }
-        currentAssistantEl.innerHTML = renderMarkdown(currentAssistantText) + footer;
+        currentAssistantEl.innerHTML = renderMarkdown(trimmed) + footer;
       }
     }
     currentAssistantEl = null;
@@ -1456,7 +1521,7 @@
 
   function renderMarkdown(text) {
     if (!text) return "";
-    var html = text;
+    var html = text.replace(/\r\n/g, "\n").replace(/\n{3,}/g, "\n\n");
 
     // 1. Code blocks with Antigravity-style Toolbar (Language Tag + Copy + Insert at Cursor)
     html = html.replace(/```(\w*)\n([\s\S]*?)```/g, function(_, lang, code) {

@@ -254,11 +254,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         if (ev.type === "start" && ev.data.session_id) {
           conv.sessionId = ev.data.session_id;
         }
-        if (ev.type === "message" || ev.type === "token") {
-          const chunk = ev.data.content || ev.data.text || "";
-          assistantBuf += chunk;
-          // Token meter: approximate token count (rough: ~4 chars per token)
-          this._tokenCount += Math.max(1, Math.ceil(chunk.length / 4));
+        if (ev.type === "message" || ev.type === "token" || ev.type === "thinking_delta" || ev.type === "thinking") {
+          const chunk = ev.data.content || ev.data.text || ev.data.delta || "";
+          if (ev.type === "message" || ev.type === "token") {
+            assistantBuf += chunk;
+          }
+          if (chunk) {
+            this._tokenCount += Math.max(1, Math.ceil(chunk.length / 3.5));
+          }
         }
         if (ev.type === "status") {
           this._post({ action: "buildStatus", status: ev.data.phase || "building", message: ev.data.message || "" });

@@ -208,10 +208,10 @@ body {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 12px;
+  padding: 8px 12px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   scroll-behavior: smooth;
 }
 
@@ -393,8 +393,8 @@ body {
   border-radius: 50%;
   background: #60a5fa;
   animation: pulse 1s ease-in-out infinite;
-  margin-left: 3px;
-  vertical-align: middle;
+  margin-left: 4px;
+  vertical-align: baseline;
 }
 @keyframes pulse {
   0%, 100% { opacity: 0.3; transform: scale(0.8); }
@@ -402,7 +402,9 @@ body {
 }
 
 /* ---- Markdown in Assistant Messages ---- */
-.msg.assistant p       { margin: 3px 0; }
+.msg.assistant p       { margin: 2px 0; line-height: 1.45; }
+.msg.assistant p:first-child { margin-top: 0; }
+.msg.assistant p:last-child { margin-bottom: 0; }
 .msg.assistant ul,
 .msg.assistant ol      { margin: 3px 0 3px 14px; }
 .msg.assistant li      { margin: 2px 0; }
@@ -453,7 +455,7 @@ body {
 
 /* ---- Input Area ---- */
 #input-area {
-  padding: 6px 12px 10px;
+  padding: 4px 10px 8px;
   border-top: 1px solid var(--vscode-panel-border, rgba(255,255,255,0.07));
   background: var(--vscode-sideBarSectionHeader-background, rgba(255,255,255,0.02));
   flex-shrink: 0;
@@ -521,7 +523,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 5px;
+  margin-bottom: 3px;
 }
 
 
@@ -1568,7 +1570,7 @@ body {
 
 /* Antigravity Thought Capsule (Thought for Xs ›) */
 .thought-capsule-block {
-  margin: 6px 0 10px 0;
+  margin: 4px 0 6px 0;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
