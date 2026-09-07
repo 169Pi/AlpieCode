@@ -39,9 +39,36 @@ class ContextManager:
         self.max_tokens = max_tokens
         self._messages: List[dict] = []
 
+    def rolling_compact_old_tools(self, keep_last_turns: int = 3) -> None:
+        """Truncate large historical tool outputs from turns older than keep_last_turns."""
+        assistant_indices = [
+            i for i, m in enumerate(self._messages)
+            if isinstance(m, dict) and m.get("role") == "assistant"
+        ]
+        if len(assistant_indices) <= keep_last_turns:
+            return
+
+        cutoff_idx = assistant_indices[-keep_last_turns]
+        for i in range(cutoff_idx):
+            msg = self._messages[i]
+            if isinstance(msg, dict) and msg.get("role") == "tool":
+                content = str(msg.get("content", ""))
+                # Never truncate update_plan output
+                if "[Plan updated]" in content or len(content) <= 300:
+                    continue
+                lines = content.splitlines()
+                if len(lines) > 8:
+                    preview_start = "\n".join(lines[:3])
+                    preview_end = "\n".join(lines[-2:])
+                    msg["content"] = f"[Output: {len(lines)} lines truncated for brevity]\n{preview_start}\n...\n{preview_end}" 
+                else:
+                    msg["content"] = content[:150] + f"... [truncated {len(content)} chars]"
+
     @property
     def messages(self) -> List[dict]:
+        self.rolling_compact_old_tools(keep_last_turns=3)
         return self._messages
+
 
     @messages.setter
     def messages(self, msgs: List[dict]) -> None:

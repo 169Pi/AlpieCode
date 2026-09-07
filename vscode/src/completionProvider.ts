@@ -5,7 +5,8 @@
  * suggestions as the user types. Press Tab to accept.
  *
  * Features:
- *  - Debounced requests (300ms pause before triggering)
+ *  - LRU In-Memory Completion Cache (instant 0ms recall on repeated/backspaced tokens)
+ *  - Adaptive Debouncing (120ms after dot/bracket, 240ms for alphanumeric)
  *  - Cancellation-aware (cancels in-flight requests on new keystrokes)
  *  - Sends prefix + suffix + language to POST /completion
  *  - Works with both online and offline backends
@@ -20,9 +21,9 @@ import { URL } from "url";
 /*  Configuration                                                     */
 /* ------------------------------------------------------------------ */
 
-const DEBOUNCE_MS = 300;     // Wait 300ms after last keystroke
-const MIN_PREFIX_LENGTH = 8; // Don't trigger on very short prefixes
-const REQUEST_TIMEOUT = 8000; // 8 second timeout
+const MIN_PREFIX_LENGTH = 8;
+const REQUEST_TIMEOUT = 8000;
+const MAX_CACHE_SIZE = 150;
 
 /* ------------------------------------------------------------------ */
 /*  Provider                                                          */
@@ -32,6 +33,7 @@ export class AlpieCompletionProvider implements vscode.InlineCompletionItemProvi
 
   private _timer: ReturnType<typeof setTimeout> | null = null;
   private _abortController: AbortController | null = null;
+  private _lruCache: Map<string, string> = new Map();
 
   async provideInlineCompletionItems(
     document: vscode.TextDocument,
@@ -56,7 +58,6 @@ export class AlpieCompletionProvider implements vscode.InlineCompletionItemProvi
     const prefixRange = new vscode.Range(new vscode.Position(0, 0), position);
     const prefix = document.getText(prefixRange);
 
-    // Don't trigger on very short prefixes
     if (prefix.trim().length < MIN_PREFIX_LENGTH) { return null; }
 
     const suffixRange = new vscode.Range(
@@ -68,8 +69,27 @@ export class AlpieCompletionProvider implements vscode.InlineCompletionItemProvi
     const language = document.languageId;
     const filePath = vscode.workspace.asRelativePath(document.uri);
 
-    // Debounce: wait for user to pause typing
-    await this._debounce(token);
+    // Check In-Memory LRU Cache for zero-latency instant recall
+    const cacheKey = `${language}:::${prefix.slice(-250)}:::${suffix.slice(0, 80)}`;
+    if (this._lruCache.has(cacheKey)) {
+      const cached = this._lruCache.get(cacheKey)!;
+      // Move to end for LRU
+      this._lruCache.delete(cacheKey);
+      this._lruCache.set(cacheKey, cached);
+      return [
+        new vscode.InlineCompletionItem(
+          cached,
+          new vscode.Range(position, position)
+        ),
+      ];
+    }
+
+    // Adaptive debounce based on trigger character
+    const lastChar = prefix.slice(-1);
+    const isPunctuation = /[.({\[:=,>]/.test(lastChar);
+    const debounceMs = isPunctuation ? 120 : 240;
+
+    await this._debounce(token, debounceMs);
     if (token.isCancellationRequested) { return null; }
 
     // Fetch completion from server
@@ -84,6 +104,13 @@ export class AlpieCompletionProvider implements vscode.InlineCompletionItemProvi
 
       if (!completion || token.isCancellationRequested) { return null; }
 
+      // Save to LRU Cache
+      if (this._lruCache.size >= MAX_CACHE_SIZE) {
+        const firstKey = this._lruCache.keys().next().value;
+        if (firstKey) this._lruCache.delete(firstKey);
+      }
+      this._lruCache.set(cacheKey, completion);
+
       return [
         new vscode.InlineCompletionItem(
           completion,
@@ -97,13 +124,13 @@ export class AlpieCompletionProvider implements vscode.InlineCompletionItemProvi
 
   /* ---- Debounce ---- */
 
-  private _debounce(token: vscode.CancellationToken): Promise<void> {
+  private _debounce(token: vscode.CancellationToken, ms: number): Promise<void> {
     return new Promise((resolve) => {
       if (this._timer) { clearTimeout(this._timer); }
       this._timer = setTimeout(() => {
         this._timer = null;
         resolve();
-      }, DEBOUNCE_MS);
+      }, ms);
 
       token.onCancellationRequested(() => {
         if (this._timer) { clearTimeout(this._timer); this._timer = null; }
@@ -176,5 +203,6 @@ export class AlpieCompletionProvider implements vscode.InlineCompletionItemProvi
   dispose() {
     if (this._timer) { clearTimeout(this._timer); }
     if (this._abortController) { this._abortController.abort(); }
+    this._lruCache.clear();
   }
 }

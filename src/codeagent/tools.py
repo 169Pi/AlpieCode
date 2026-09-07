@@ -1,3 +1,4 @@
+from .guardrails import validate_code_syntax
 _RECENTLY_WRITTEN_FILES = set()
 
 """
@@ -519,6 +520,11 @@ def _read_file(workdir: Path, path: str, start_line: int = None, end_line: int =
 
 
 def _write_file(workdir: Path, path: str, content: str) -> str:
+    # Pre-commit AST syntax check to prevent writing corrupt code
+    is_valid, err = validate_code_syntax(path, content)
+    if not is_valid:
+        return f"error: Pre-commit syntax check failed for '{path}':\n{err}\nPlease fix the syntax error before writing."
+
     p = workdir / path
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(content, encoding="utf-8")
@@ -532,23 +538,53 @@ def _edit_file(workdir: Path, path: str, old_str: str, new_str: str) -> str:
         return f"error: file not found: {path}"
     text = p.read_text(encoding="utf-8", errors="replace")
     count = text.count(old_str)
-    if count == 0:
-        import difflib
-        lines = text.splitlines()
-        old_lines = [ol.strip() for ol in old_str.splitlines() if ol.strip()]
-        target_line = old_lines[0] if old_lines else old_str.strip()
-        close_matches = difflib.get_close_matches(target_line, [l.strip() for l in lines], n=3, cutoff=0.3)
-        nearby = [(i + 1, l) for i, l in enumerate(lines) if l.strip() in close_matches]
-        hint = ""
-        if nearby:
-            hint = "\nClosest matching lines in file:\n" + "\n".join(f"  Line {n}: {l.strip()[:80]}" for n, l in nearby[:3])
-        return (
-            f"error: old_str not found in file '{path}'. It must match existing text EXACTLY (including whitespace/indentation).{hint}\n"
-            f"→ Action: Run read_file on '{path}' around these lines to see the exact whitespace, then retry edit_file."
-        )
-    if count > 1:
+
+    if count == 1:
+        new_text = text.replace(old_str, new_str, 1)
+    elif count > 1:
         return f"error: old_str matched {count} times in '{path}'. Must match exactly 1 occurrence. Include more surrounding lines in old_str to make it unique."
-    p.write_text(text.replace(old_str, new_str, 1), encoding="utf-8")
+    else:
+        # Whitespace-tolerant fuzzy block matching
+        import difflib
+        lines = text.splitlines(keepends=True)
+        old_lines = old_str.splitlines(keepends=True)
+        n_old = len(old_lines)
+        best_ratio = 0.0
+        best_idx = -1
+
+        norm_old = "".join(l.strip() for l in old_lines)
+
+        for i in range(len(lines) - n_old + 1):
+            window = lines[i:i + n_old]
+            norm_win = "".join(l.strip() for l in window)
+            ratio = difflib.SequenceMatcher(None, norm_win, norm_old).ratio()
+            if ratio > best_ratio:
+                best_ratio = ratio
+                best_idx = i
+
+        if best_ratio >= 0.85 and best_idx >= 0:
+            # Fuzzy match found with high confidence
+            new_lines_slice = new_str.splitlines(keepends=True)
+            new_text = "".join(lines[:best_idx] + new_lines_slice + lines[best_idx + n_old:])
+        else:
+            old_stripped = [ol.strip() for ol in old_lines if ol.strip()]
+            target_line = old_stripped[0] if old_stripped else old_str.strip()
+            close_matches = difflib.get_close_matches(target_line, [l.strip() for l in lines], n=3, cutoff=0.3)
+            nearby = [(i + 1, l) for i, l in enumerate(lines) if l.strip() in close_matches]
+            hint = ""
+            if nearby:
+                hint = "\nClosest matching lines in file:\n" + "\n".join(f"  Line {n}: {l.strip()[:80]}" for n, l in nearby[:3])
+            return (
+                f"error: old_str not found in file '{path}'.{hint}\n"
+                f"→ Action: Run read_file on '{path}' around these lines, then retry edit_file."
+            )
+
+    # Post-edit syntax validation
+    is_valid, err = validate_code_syntax(path, new_text)
+    if not is_valid:
+        return f"error: Edit would result in a syntax error in '{path}':\n{err}\nPlease revise the replacement."
+
+    p.write_text(new_text, encoding="utf-8")
     return "edit applied"
 
 
@@ -590,19 +626,29 @@ def _list_files(workdir: Path, path: str = ".", max_depth: int = 4) -> str:
 
 def _file_search(workdir: Path, pattern: str, path: str = ".", include: str = None,
                  case_insensitive: bool = False) -> str:
-    """Search for a pattern across files using grep."""
+    """Search for a pattern across files using ripgrep (rg) or grep."""
     target = workdir / path
+    import shutil
 
-    # Build grep command
-    cmd = ["grep", "-rn", "--color=never"]
-    if case_insensitive:
-        cmd.append("-i")
-    if include:
-        cmd.extend(["--include", include])
-    # Exclude common non-code directories
-    for excl in [".git", "node_modules", "__pycache__", ".venv", "venv", ".egg-info"]:
-        cmd.extend(["--exclude-dir", excl])
-    cmd.extend([pattern, str(target)])
+    rg_bin = shutil.which("rg")
+    if rg_bin:
+        cmd = [rg_bin, "--no-heading", "--line-number", "--color=never"]
+        if case_insensitive:
+            cmd.append("-i")
+        if include:
+            cmd.extend(["-g", include])
+        cmd.extend(["--hidden", "--glob", "!.git/*", "--glob", "!node_modules/*", "--glob", "!.venv/*"])
+        cmd.extend(["-e", pattern, str(target)])
+    else:
+        # Fallback to grep
+        cmd = ["grep", "-rn", "--color=never"]
+        if case_insensitive:
+            cmd.append("-i")
+        if include:
+            cmd.extend(["--include", include])
+        for excl in [".git", "node_modules", "__pycache__", ".venv", "venv", ".egg-info"]:
+            cmd.extend(["--exclude-dir", excl])
+        cmd.extend([pattern, str(target)])
 
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=30, cwd=workdir)

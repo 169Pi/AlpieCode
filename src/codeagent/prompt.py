@@ -551,9 +551,13 @@ class PromptBuilder:
         self,
         is_offline: bool = False,
         complexity: str = "low",
+        task_context=None,
     ) -> List[dict]:
         if complexity == "qa":
             return []  # No tools for Q&A
+        if task_context is not None:
+            if getattr(task_context, "tool_set", None) == "none" or getattr(task_context, "intent", None) in ("qa", "explain"):
+                return []
         if is_offline:
             return OFFLINE_TOOLS
         if complexity in ("medium", "high"):

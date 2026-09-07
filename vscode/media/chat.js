@@ -109,6 +109,20 @@
   // ---- Slash Commands Registry ----
   const SLASH_COMMANDS = [
     {
+      cmd: "/fix",
+      title: "fix",
+      desc: "Auto-scan workspace diagnostics & linter errors and comprehensively fix them",
+      icon: ICONS.pencil,
+      action: "fix"
+    },
+    {
+      cmd: "/rollback",
+      title: "rollback",
+      desc: "Revert all uncommitted modifications back to last git commit",
+      icon: ICONS.cross,
+      action: "rollback"
+    },
+    {
       cmd: "/plan",
       title: "plan",
       desc: "Analyze codebase & generate an implementation plan without making changes",
@@ -275,6 +289,14 @@
       vscode.postMessage({ action: "requestGitPush" });
       return;
     }
+    if (item.action === "fix") {
+      vscode.postMessage({ action: "fixDiagnostics" });
+      return;
+    }
+    if (item.action === "rollback") {
+      vscode.postMessage({ action: "rollbackChanges" });
+      return;
+    }
     inputEl.value = item.prompt || (item.cmd + " ");
     inputEl.focus();
     inputEl.style.height = "auto";
@@ -415,34 +437,53 @@
   }
 
 
-  // ---- Live Build Status Bar ----
+  // ---- Live Build Status Bar & Stepper ----
   function updateBuildStatus(data) {
     var bar = document.getElementById("live-build-bar");
     var txt = document.getElementById("live-build-text");
     if (!bar || !txt) return;
 
-    if (!data || data.status === "complete" || data.status === "idle") {
-      if (data && data.status === "complete") {
-        var sp = bar.querySelector(".live-build-spinner");
-        if (sp) sp.innerHTML = ICONS.check;
-        txt.textContent = data.message || "Complete";
-        setTimeout(function() {
-          bar.classList.add("hidden");
-        }, 2000);
-      } else {
-        bar.classList.add("hidden");
-      }
+    if (!data || data.status === "idle") {
+      bar.classList.add("hidden");
       return;
     }
 
     bar.classList.remove("hidden");
     var status = data.status || "building";
     var msg = data.message || "Building...";
+
+    // Map status/phase to step index (1-based)
+    var stepIndex = 1;
+    if (status === "rephrasing") { stepIndex = 1; }
+    else if (status === "plan") { stepIndex = 2; }
+    else if (status === "files" || status === "building") { stepIndex = 3; }
+    else if (status === "verify") { stepIndex = 4; }
+    else if (status === "complete") { stepIndex = 5; }
+
+    var steps = bar.querySelectorAll(".stepper-step");
+    var stepNames = ["rephrase", "plan", "files", "verify", "done"];
+
+    steps.forEach(function(s, idx) {
+      var sIdx = idx + 1;
+      s.classList.remove("active", "completed");
+      if (sIdx < stepIndex || (status === "complete" && sIdx <= 5)) {
+        s.classList.add("completed");
+      } else if (sIdx === stepIndex) {
+        s.classList.add("active");
+      }
+    });
+
     var spinner = bar.querySelector(".live-build-spinner");
     if (spinner) {
       spinner.innerHTML = status === "rephrasing" ? ICONS.sparkle : (status === "complete" ? ICONS.check : ICONS.terminal);
     }
     txt.textContent = msg;
+
+    if (status === "complete") {
+      setTimeout(function() {
+        bar.classList.add("hidden");
+      }, 4000);
+    }
   }
 
   // ---- Interactive GitHub Push Card ----
@@ -1010,13 +1051,25 @@
     var files = data.files || [];
     var commands = data.commands || [];
 
+    var fileStats = data.fileStats || {};
     var filesHtml = "";
     files.forEach(function(f) {
       var safeF = escapeHtml(f);
+      var stat = fileStats[f] || fileStats[safeF] || null;
+      var statBadge = "";
+      if (stat) {
+        statBadge = '<span class="diff-stat-badge"><span class="diff-add">+' + (stat.added || 0) + '</span><span class="diff-del">-' + (stat.removed || 0) + '</span></span>';
+      }
       filesHtml +=
-        '<div class="walkthrough-file-item" data-path="' + safeF + '" title="Click to open ' + safeF + '">' +
-          '<span class="file-badge edit">' + (safeF.endsWith(".md") ? "DOC" : "EDIT") + '</span>' +
-          '<span class="file-name">' + safeF + '</span>' +
+        '<div class="walkthrough-file-item" data-path="' + safeF + '" title="Click to inspect diff for ' + safeF + '">' +
+          '<div class="file-item-left">' +
+            '<span class="file-badge edit">' + (safeF.endsWith(".md") ? "DOC" : "EDIT") + '</span>' +
+            '<span class="file-name">' + safeF + '</span>' +
+          '</div>' +
+          '<div class="file-item-right">' +
+            statBadge +
+            '<button class="file-diff-btn" data-path="' + safeF + '" title="Open side-by-side diff">' + ICONS.diff + '</button>' +
+          '</div>' +
         '</div>';
     });
 
@@ -1058,11 +1111,17 @@
         '</button>' +
       '</div>';
 
-    // Click file to open in editor
+    // Click file to open in editor or diff
     card.querySelectorAll(".walkthrough-file-item").forEach(function(item) {
-      item.addEventListener("click", function() {
+      item.addEventListener("click", function(evt) {
+        var diffBtn = evt.target.closest(".file-diff-btn");
         var p = item.getAttribute("data-path");
-        if (p) vscode.postMessage({ action: "openFile", path: p });
+        if (diffBtn && p) {
+          vscode.postMessage({ action: "openDiffForFile", path: p });
+          evt.stopPropagation();
+        } else if (p) {
+          vscode.postMessage({ action: "openFile", path: p });
+        }
       });
     });
 

@@ -244,6 +244,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
     let assistantBuf = "";
     this._modifiedFiles = [];
+    this._fileStats = {};
     this._executedCommands = [];
 
     this._abortStream = streamChat(
@@ -264,7 +265,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         }
         if (ev.type === "tool_call") {
           this._handleToolCall(workdir, ev.data);
-          this._post({ action: "buildStatus", status: "building", message: this._toolBuildingDesc(ev.data) });
+          const toolName = ev.data.name || "";
+          let phase = "building";
+          if (toolName === "write_file" || toolName === "edit_file") { phase = "files"; }
+          else if (toolName === "bash") { phase = "verify"; }
+          else if (toolName === "update_plan") { phase = "plan"; }
+          this._post({ action: "buildStatus", status: phase, message: this._toolBuildingDesc(ev.data) });
         }
         if (ev.type === "walkthrough") {
           this._handleWalkthroughEvent(workdir, ev.data);
@@ -298,7 +304,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             data: {
               summary: "Changes completed for: " + task,
               files: uniqueFiles,
-              commands: this._executedCommands
+              commands: this._executedCommands,
+              fileStats: this._fileStats
             }
           });
         }
@@ -319,6 +326,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
   /** Files modified during the current stream (for sandbox auto-run). */
   private _modifiedFiles: string[] = [];
+  private _fileStats: Record<string, { added: number; removed: number }> = {};
   private _executedCommands: Array<{ command: string; exitCode?: number }> = [];
 
   private async _handleToolCall(workdir: string, data: any) {
@@ -339,6 +347,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       const content = args.content || "";
       const dir = path.dirname(absPath);
       if (!fs.existsSync(dir)) { fs.mkdirSync(dir, { recursive: true }); }
+
+      // Calculate line changes
+      const existingText = fs.existsSync(absPath) ? (fs.readFileSync(absPath, "utf-8") || "") : "";
+      const oldLineCount = existingText ? existingText.split("\n").length : 0;
+      const newLineCount = content.split("\n").length;
+      const added = Math.max(0, newLineCount - oldLineCount) || newLineCount;
+      const removed = Math.max(0, oldLineCount - newLineCount);
+      this._fileStats[relPath] = { added, removed };
 
       if (!showDiffPreview) {
         // Direct write mode: write directly without asking for accept approval
@@ -378,6 +394,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       const oldStr = args.old_str || "";
       const newStr = args.new_str || "";
       const newContent = oldStr ? existing.replace(oldStr, newStr) : newStr;
+
+      const editOldLines = oldStr ? oldStr.split("\n").length : 0;
+      const editNewLines = newStr ? newStr.split("\n").length : 0;
+      this._fileStats[relPath] = { added: editNewLines, removed: editOldLines };
 
       if (!showDiffPreview) {
         // Direct edit mode: write directly without asking for accept approval
@@ -1028,7 +1048,16 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       case "insertCodeAtCursor":
         this._insertCodeAtCursor(m.code);
         break;
-            case "reviewChanges":
+            case "openDiffForFile":
+        this._openDiffForFile(m.path);
+        break;
+      case "fixDiagnostics":
+        this._handleFixDiagnostics();
+        break;
+      case "rollbackChanges":
+        this._handleRollbackChanges();
+        break;
+      case "reviewChanges":
         this._openReviewChanges();
         break;
       case "openFile":
@@ -1079,12 +1108,104 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         path: "walkthrough.md",
         summary,
         files: [...new Set(files.concat(this._modifiedFiles))],
-        commands: commands.length > 0 ? commands : this._executedCommands
+        commands: commands.length > 0 ? commands : this._executedCommands,
+        fileStats: data.fileStats || this._fileStats
       }
     });
   }
 
   /* ---- Editor & Source Control Integrations ---- */
+
+  /** Open VS Code native side-by-side diff for any file against git HEAD or empty base. */
+  private async _openDiffForFile(relPath: string) {
+    if (!relPath) return;
+    const absPath = this._toLocalPath(relPath);
+    if (!fs.existsSync(absPath)) return;
+
+    try {
+      const workdir = this._workdir();
+      let headContent = "";
+      try {
+        headContent = this._execSync(`git show HEAD:"${relPath}"`, workdir, 2500);
+      } catch {
+        headContent = "";
+      }
+
+      const tempDir = os.tmpdir();
+      const headTempPath = path.join(tempDir, `head_${path.basename(relPath)}`);
+      fs.writeFileSync(headTempPath, headContent, "utf-8");
+
+      await vscode.commands.executeCommand(
+        "vscode.diff",
+        vscode.Uri.file(headTempPath),
+        vscode.Uri.file(absPath),
+        `${path.basename(relPath)} (HEAD ↔ Modified)`
+      );
+    } catch {
+      this._openFileInEditor(relPath);
+    }
+  }
+
+  /** Scan workspace for active compiler/linter diagnostics and auto-generate fix prompt. */
+  private async _handleFixDiagnostics() {
+    const allDiagnostics = vscode.languages.getDiagnostics();
+    const errorList: string[] = [];
+
+    for (const [uri, diags] of allDiagnostics) {
+      const activeDiags = diags.filter(d => d.severity === vscode.DiagnosticSeverity.Error || d.severity === vscode.DiagnosticSeverity.Warning);
+      if (activeDiags.length > 0) {
+        const rel = vscode.workspace.asRelativePath(uri);
+        if (rel.includes("node_modules") || rel.includes(".venv") || rel.startsWith("..")) continue;
+        errorList.push(`\nFile: ${rel}`);
+        for (const d of activeDiags.slice(0, 5)) {
+          const sev = d.severity === vscode.DiagnosticSeverity.Error ? "ERROR" : "WARN";
+          errorList.push(`  [Line ${d.range.start.line + 1}] [${sev}] ${d.message}`);
+        }
+      }
+    }
+
+    if (errorList.length === 0) {
+      vscode.window.showInformationMessage("✨ No active compiler or syntax errors detected in workspace files.");
+      this._post({
+        action: "agentEvent",
+        event: {
+          type: "message",
+          data: { content: "✨ **No active diagnostic errors or warnings detected in workspace files.**" }
+        }
+      });
+      return;
+    }
+
+    const prompt = `Fix the following compilation/linter errors in the codebase:${errorList.join("\n")}\n\nInspect each file, fix the root cause, and verify.`;
+    this._post({ action: "userMessage", text: "/fix - Auto-fixing active diagnostic errors..." });
+    this._stream(prompt);
+  }
+
+  /** Rollback all uncommitted changes back to git HEAD. */
+  private async _handleRollbackChanges() {
+    const choice = await vscode.window.showWarningMessage(
+      "Are you sure you want to rollback all uncommitted changes back to git HEAD?",
+      { modal: true },
+      "Rollback All Changes",
+      "Cancel"
+    );
+    if (choice !== "Rollback All Changes") return;
+
+    try {
+      const workdir = this._workdir();
+      this._execSync("git checkout -- .", workdir, 4000);
+      vscode.window.showInformationMessage("⏪ All uncommitted modifications have been rolled back to HEAD.");
+      this._post({
+        action: "agentEvent",
+        event: {
+          type: "message",
+          data: { content: "⏪ **All uncommitted modifications have been rolled back to HEAD.**" }
+        }
+      });
+    } catch (err: any) {
+      vscode.window.showErrorMessage("Rollback failed: " + (err?.message || err));
+    }
+  }
 
   private _openReviewChanges() {
     vscode.commands.executeCommand("workbench.view.scm");
@@ -1522,8 +1643,21 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     <div id="history-list"></div>
   </div>
   <div id="live-build-bar" class="live-build-bar hidden">
-    <span class="live-build-spinner"><svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="2" fill="none" stroke-dasharray="28" stroke-dashoffset="10"/></svg></span>
-    <span id="live-build-text" class="live-build-text">Building...</span>
+    <div class="stepper-track">
+      <span class="stepper-step active" data-step="rephrase"><span class="step-num">1</span> Rephrase</span>
+      <span class="stepper-arrow">›</span>
+      <span class="stepper-step" data-step="plan"><span class="step-num">2</span> Plan</span>
+      <span class="stepper-arrow">›</span>
+      <span class="stepper-step" data-step="files"><span class="step-num">3</span> Files</span>
+      <span class="stepper-arrow">›</span>
+      <span class="stepper-step" data-step="verify"><span class="step-num">4</span> Verify</span>
+      <span class="stepper-arrow">›</span>
+      <span class="stepper-step" data-step="done"><span class="step-num">5</span> Done</span>
+    </div>
+    <div class="stepper-status-line">
+      <span class="live-build-spinner"><svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="2" fill="none" stroke-dasharray="28" stroke-dashoffset="10"/></svg></span>
+      <span id="live-build-text" class="live-build-text">Building...</span>
+    </div>
   </div>
   <button id="scroll-bottom-btn" class="scroll-bottom-btn hidden" title="Scroll to bottom">↓</button>
   <div id="chat-messages"></div>

@@ -150,7 +150,7 @@ class AgentOrchestrator:
         session.is_offline = is_offline
 
         # ── Configure tools & system prompt based on complexity ──
-        active_tools = self.prompt_builder.get_tools(is_offline=is_offline, complexity=complexity)
+        active_tools = self.prompt_builder.get_tools(is_offline=is_offline, complexity=complexity, task_context=task_context)
         system_prompt = self.prompt_builder.build_system_prompt(
             session.workdir, is_offline=is_offline, complexity=complexity,
             task_context=task_context,

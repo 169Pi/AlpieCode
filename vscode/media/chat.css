@@ -1080,44 +1080,154 @@ body {
   background: rgba(56, 189, 248, 0.22);
 }
 
-/* ---- Live Build Status Bar ---- */
+
+/* ---- Live Execution Stepper (Antigravity Grade) ---- */
 .live-build-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px;
+  margin: 6px 10px 4px 10px;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  border-radius: 8px;
+  backdrop-filter: blur(12px);
+  animation: pulse-border 2.5s infinite ease-in-out;
+}
+
+.stepper-track {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  font-size: 10px;
+  font-family: var(--vscode-editor-font-family, monospace);
+}
+
+.stepper-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--vscode-descriptionForeground, #94a3b8);
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.stepper-step .step-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 9px;
+  font-weight: 600;
+}
+
+.stepper-step.active {
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.12);
+  font-weight: 600;
+}
+
+.stepper-step.active .step-num {
+  background: #38bdf8;
+  color: #0f172a;
+}
+
+.stepper-step.completed {
+  color: #34d399;
+}
+
+.stepper-step.completed .step-num {
+  background: #34d399;
+  color: #0f172a;
+}
+
+.stepper-arrow {
+  color: rgba(255, 255, 255, 0.2);
+  font-size: 11px;
+}
+
+.stepper-status-line {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 12px;
-  margin: 6px 10px 4px 10px;
-  background: rgba(30, 41, 59, 0.7);
-  border: 1px solid rgba(56, 189, 248, 0.3);
-  border-radius: 8px;
   font-size: 11px;
   color: #38bdf8;
-  backdrop-filter: blur(8px);
-  animation: pulse-border 2s infinite ease-in-out;
 }
 
-@keyframes pulse-border {
-  0%, 100% { border-color: rgba(56, 189, 248, 0.2); }
-  50% { border-color: rgba(56, 189, 248, 0.6); }
+/* Walkthrough File Item Changes Drawer */
+.walkthrough-file-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+  margin-bottom: 4px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
 }
 
-.live-build-spinner {
-  font-size: 13px;
-  display: inline-block;
-  animation: spin-build 2.5s infinite linear;
+.walkthrough-file-item:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(56, 189, 248, 0.3);
 }
 
-@keyframes spin-build {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
-
-.live-build-text {
-  font-family: var(--vscode-editor-font-family, monospace);
-  white-space: nowrap;
+.file-item-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   overflow: hidden;
-  text-overflow: ellipsis;
 }
+
+.file-item-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.diff-stat-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.diff-add {
+  color: #34d399;
+}
+
+.diff-del {
+  color: #f87171;
+}
+
+.file-diff-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--vscode-foreground, #ccc);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.file-diff-btn:hover {
+  background: rgba(56, 189, 248, 0.2);
+  color: #38bdf8;
+}
+
 
 /* ---- GitHub Push Card ---- */
 .github-push-card {

@@ -171,62 +171,103 @@ class ToolExecutor:
                 tool_call_id=tc.id, name=tc.name, content=res_str, duration_ms=elapsed
             )
 
-        # Stage 2: Sequential mutating tools (write_file, edit_file, bash)
-        for tc in mut_calls:
-            if on_tool_start:
-                on_tool_start(tc.name, tc.arguments)
-            t0 = time.monotonic()
-            safe_args = tc.arguments if isinstance(tc.arguments, dict) else {}
-            fn = self.dispatch.get(tc.name)
-            if fn:
-                try:
-                    res_str = str(fn(safe_args))
-                except Exception as e:
-                    res_str = f"error: {e}"
-            else:
-                res_str = f"error: Unknown tool '{tc.name}'"
-            elapsed = (time.monotonic() - t0) * 1000
+        # Stage 2: Mutating tools (parallel write_file if distinct paths, otherwise sequential)
+        all_writes = all(tc.name == "write_file" for tc in mut_calls)
+        paths = [
+            tc.arguments.get("path") if isinstance(tc.arguments, dict) else None
+            for tc in mut_calls
+        ]
+        can_parallel_write = (
+            all_writes
+            and len(mut_calls) > 1
+            and len(paths) == len(set(paths))
+            and None not in paths
+        )
 
-            # Tool loop detection guard
-            call_sig = (tc.name, json.dumps(tc.arguments, sort_keys=True))
-            self.tool_call_history.append(call_sig)
-            repeat_count = sum(1 for item in self.tool_call_history[-5:] if item == call_sig)
+        if can_parallel_write:
+            with ThreadPoolExecutor(max_workers=min(4, len(mut_calls))) as pool:
+                future_to_tc = {}
+                for tc in mut_calls:
+                    if on_tool_start:
+                        on_tool_start(tc.name, tc.arguments)
+                    t0 = time.monotonic()
+                    safe_args = tc.arguments if isinstance(tc.arguments, dict) else {}
+                    fn = self.dispatch.get(tc.name)
+                    if fn:
+                        future = pool.submit(fn, safe_args)
+                    else:
+                        future = pool.submit(lambda: f"error: Unknown tool '{tc.name}'")
+                    future_to_tc[future] = (tc, t0)
 
-            if repeat_count >= 3:
-                res_str += (
-                    f"\n\n🛑 REPEATED TOOL CALL LOOP DETECTED (attempt #{repeat_count}). "
-                    f"You have already executed '{tc.name}' with these exact parameters {repeat_count} times in a row. "
-                    "All checks have passed. Do NOT run this tool again. Output your final summary starting with: DONE: <summary>."
-                )
-
-            # Compilation failure recovery hint
-            if tc.name == "bash":
-                cmd = tc.arguments.get("command", "") if isinstance(tc.arguments, dict) else ""
-                is_compile = any(kw in cmd for kw in ["g++", "gcc", "clang", "make", "cmake", "cargo build", "rustc"])
-                if is_compile and "exit_code" in str(res_str):
+                for future in as_completed(future_to_tc):
+                    tc, t0 = future_to_tc[future]
+                    elapsed = (time.monotonic() - t0) * 1000
                     try:
-                        result_data = json.loads(res_str.split("\n", 1)[-1] if res_str.startswith("⚠️") else res_str)
-                        if result_data.get("exit_code", 0) != 0:
-                            compile_key = cmd.strip()
-                            self.compile_fail_counts[compile_key] = self.compile_fail_counts.get(compile_key, 0) + 1
-                            if self.compile_fail_counts[compile_key] >= 3:
-                                res_str += (
-                                    "\n\n🛑 REPEATED COMPILATION FAILURE (attempt "
-                                    f"#{self.compile_fail_counts[compile_key]}). "
-                                    "STOP making blind edits. Re-read the ENTIRE source file with "
-                                    "read_file to understand its full structure, then fix ALL errors "
-                                    "comprehensively in one edit."
-                                )
-                        else:
-                            self.compile_fail_counts.pop(cmd.strip(), None)
-                    except (json.JSONDecodeError, ValueError):
-                        pass
+                        res_str = str(future.result())
+                    except Exception as e:
+                        res_str = f"error: {e}"
+                    if on_tool_end:
+                        on_tool_end(tc.name, res_str)
+                    results_map[tc.id] = ToolResult(
+                        tool_call_id=tc.id, name=tc.name, content=res_str, duration_ms=elapsed
+                    )
+        else:
+            # Stage 2: Sequential mutating tools (write_file, edit_file, bash)
+            for tc in mut_calls:
+                if on_tool_start:
+                    on_tool_start(tc.name, tc.arguments)
+                t0 = time.monotonic()
+                safe_args = tc.arguments if isinstance(tc.arguments, dict) else {}
+                fn = self.dispatch.get(tc.name)
+                if fn:
+                    try:
+                        res_str = str(fn(safe_args))
+                    except Exception as e:
+                        res_str = f"error: {e}"
+                else:
+                    res_str = f"error: Unknown tool '{tc.name}'"
+                elapsed = (time.monotonic() - t0) * 1000
 
-            if on_tool_end:
-                on_tool_end(tc.name, res_str)
-            results_map[tc.id] = ToolResult(
-                tool_call_id=tc.id, name=tc.name, content=res_str, duration_ms=elapsed
-            )
+                # Tool loop detection guard
+                call_sig = (tc.name, json.dumps(tc.arguments, sort_keys=True))
+                self.tool_call_history.append(call_sig)
+                repeat_count = sum(1 for item in self.tool_call_history[-5:] if item == call_sig)
+
+                if repeat_count >= 3:
+                    res_str += (
+                        f"\n\n🛑 REPEATED TOOL CALL LOOP DETECTED (attempt #{repeat_count}). "
+                        f"You have already executed '{tc.name}' with these exact parameters {repeat_count} times in a row. "
+                        "All checks have passed. Do NOT run this tool again. Output your final summary starting with: DONE: <summary>."
+                    )
+
+                # Compilation failure recovery hint
+                if tc.name == "bash":
+                    cmd = tc.arguments.get("command", "") if isinstance(tc.arguments, dict) else ""
+                    is_compile = any(kw in cmd for kw in ["g++", "gcc", "clang", "make", "cmake", "cargo build", "rustc"])
+                    if is_compile and "exit_code" in str(res_str):
+                        try:
+                            result_data = json.loads(res_str.split("\n", 1)[-1] if res_str.startswith("⚠️") else res_str)
+                            if result_data.get("exit_code", 0) != 0:
+                                compile_key = cmd.strip()
+                                self.compile_fail_counts[compile_key] = self.compile_fail_counts.get(compile_key, 0) + 1
+                                if self.compile_fail_counts[compile_key] >= 3:
+                                    res_str += (
+                                        "\n\n🛑 REPEATED COMPILATION FAILURE (attempt "
+                                        f"#{self.compile_fail_counts[compile_key]}). "
+                                        "STOP making blind edits. Re-read the ENTIRE source file with "
+                                        "read_file to understand its full structure, then fix ALL errors "
+                                        "comprehensively in one edit."
+                                    )
+                            else:
+                                self.compile_fail_counts.pop(cmd.strip(), None)
+                        except (json.JSONDecodeError, ValueError):
+                            pass
+
+                if on_tool_end:
+                    on_tool_end(tc.name, res_str)
+                results_map[tc.id] = ToolResult(
+                    tool_call_id=tc.id, name=tc.name, content=res_str, duration_ms=elapsed
+                )
 
         return [results_map[tc.id] for tc in tool_calls if tc.id in results_map]
 
