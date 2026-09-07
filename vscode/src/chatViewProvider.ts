@@ -142,6 +142,34 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
     this._healthCheck();
 
+    // Track active editor to provide instant file context chip
+    const activeDocDis = vscode.window.onDidChangeActiveTextEditor((editor) => {
+      if (editor && editor.document) {
+        const filePath = vscode.workspace.asRelativePath(editor.document.uri);
+        const fileName = path.basename(filePath);
+        const lang = editor.document.languageId;
+        this._post({
+          action: "activeFileContext",
+          data: { filePath, fileName, lang }
+        });
+      }
+    });
+    this._ctx.subscriptions.push(activeDocDis);
+
+    // Initial context check
+    if (vscode.window.activeTextEditor?.document) {
+      const doc = vscode.window.activeTextEditor.document;
+      const filePath = vscode.workspace.asRelativePath(doc.uri);
+      const fileName = path.basename(filePath);
+      const lang = doc.languageId;
+      setTimeout(() => {
+        this._post({
+          action: "activeFileContext",
+          data: { filePath, fileName, lang }
+        });
+      }, 300);
+    }
+
     // Track active editor selection to provide instant context chips
     const selDis = vscode.window.onDidChangeTextEditorSelection((e) => {
       const editor = e.textEditor;
@@ -559,9 +587,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       event: { type: "message", data: { content: "\n⚡ **Running in Terminal**: `" + runCmd + "`\n" } }
     });
 
-    // Run directly in interactive terminal panel so output is immediately visible
-    this._runInTerminal(runCmd, workdir);
-
     const execution = await vscode.tasks.executeTask(task);
 
     const disposable = vscode.tasks.onDidEndTaskProcess((e) => {
@@ -578,22 +603,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           });
         } else {
           this._autoFixRetries = 0; // reset on success
-          // Capture and show stdout in chat output
-          try {
-            const out = this._execSync(runCmd, workdir, 8000);
-            if (out && out.trim()) {
-              this._post({
-                action: "agentEvent",
-                event: {
-                  type: "tool_result",
-                  data: {
-                    id: "terminal_output",
-                    output: "🚀 Output from: " + runCmd + "\n" + out.trim()
-                  }
-                }
-              });
-            }
-          } catch {}
           vscode.window.showInformationMessage("AlpieCode: Code executed successfully!");
           this._promptGitPush(workdir);
         }
@@ -996,6 +1005,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         break;
       case "requestGitPush":
         this._promptGitPush(this._workdir(), true);
+        break;
+      case "insertCodeAtCursor":
+        this._insertCodeAtCursor(m.code);
+        break;
+      case "openFile":
+        this._openFileInEditor(m.path);
+        break;
+      case "copyToClipboard":
+        if (m.text) { vscode.env.clipboard.writeText(m.text); }
         break;
       case "changeGitUsername":
         this._handleChangeGitUsername(m.workdir || this._workdir(), m.currentUsername, m.branch);
@@ -1423,7 +1441,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     <span class="live-build-spinner">🔨</span>
     <span id="live-build-text" class="live-build-text">Building...</span>
   </div>
+  <button id="scroll-bottom-btn" class="scroll-bottom-btn hidden" title="Scroll to bottom">↓</button>
   <div id="chat-messages"></div>
+  <div id="active-context-bar" class="active-context-bar hidden">
+    <span class="ac-icon">📄</span>
+    <span id="ac-filename" class="ac-filename">file</span>
+    <button id="ac-remove-btn" class="ac-remove-btn" title="Remove context">✕</button>
+  </div>
   <div id="input-area">
     <div id="image-preview-bar" class="hidden">
       <div id="image-preview-item">

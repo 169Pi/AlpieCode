@@ -58,6 +58,10 @@
   const tokenBadge        = document.getElementById("token-badge");
   const liveBuildBar      = document.getElementById("live-build-bar");
   const liveBuildText     = document.getElementById("live-build-text");
+  const scrollBottomBtn   = document.getElementById("scroll-bottom-btn");
+  const activeContextBar  = document.getElementById("active-context-bar");
+  const acFilename        = document.getElementById("ac-filename");
+  const acRemoveBtn       = document.getElementById("ac-remove-btn");
   let lastTokenStats      = { tokPerSec: 0, tokenCount: 0, sessionTotal: 0 };
 
   // Slash Commands DOM
@@ -260,6 +264,13 @@
     inputEl.style.height = Math.min(inputEl.scrollHeight, 120) + "px";
   }
 
+  if (acRemoveBtn && activeContextBar) {
+    acRemoveBtn.addEventListener("click", function() {
+      activeContextBar.classList.add("hidden");
+      activeContextBar.removeAttribute("data-path");
+    });
+  }
+
   // ---- Initialize ----
   showWelcome();
   vscode.postMessage({ action: "checkStatus" });
@@ -332,7 +343,11 @@
       }
     }
 
-    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+    if (e.key === "Enter") {
+      if (e.shiftKey) {
+        // Shift+Enter: allow default multiline newline
+        return;
+      }
       e.preventDefault();
       sendMessage();
     }
@@ -515,6 +530,13 @@
       case "changeRejected":
         appendSystemMessage("❌ Changes rejected.");
         break;
+      case "activeFileContext":
+        if (activeContextBar && acFilename && message.data) {
+          activeContextBar.classList.remove("hidden");
+          acFilename.textContent = message.data.fileName || message.data.filePath;
+          activeContextBar.setAttribute("data-path", message.data.filePath);
+        }
+        break;
       case "updateSelectionContext":
         activeSelectionContext = message.data;
         renderSelectionPill(message.data);
@@ -602,9 +624,39 @@
       welcome.className = "welcome";
       welcome.id = "welcome-card";
       welcome.innerHTML =
-        '<div class="welcome-icon">\u26a1</div>' +
-        '<h2>AlpieCode AI Agent</h2>' +
-        '<p>Ask a question, request code generation, or attach screenshots (\ud83d\udcce).</p>';
+        '<div class="welcome-header">' +
+          '<div class="welcome-icon">⚡</div>' +
+          '<h2>AlpieCode Agent</h2>' +
+          '<p class="welcome-sub">Autonomous AI pair programmer powered by 169Pi</p>' +
+        '</div>' +
+        '<div class="starter-chips-container">' +
+          '<div class="starter-chips-label">Quick Actions</div>' +
+          '<div class="starter-chips">' +
+            '<button class="starter-chip" data-prompt="Generate comprehensive unit tests for this project and verify them" type="button">' +
+              '<span class="chip-icon">🧪</span> Unit Tests' +
+            '</button>' +
+            '<button class="starter-chip" data-prompt="Audit this codebase, identify bugs or bottlenecks, and optimize them" type="button">' +
+              '<span class="chip-icon">🔍</span> Fix Bugs & Audit' +
+            '</button>' +
+            '<button class="starter-chip" data-prompt="Explain the architecture, key workflows, and data structures in this project" type="button">' +
+              '<span class="chip-icon">💡</span> Explain Architecture' +
+            '</button>' +
+            '<button class="starter-chip" data-prompt="Create an implementation plan to build a new feature cleanly" type="button">' +
+              '<span class="chip-icon">📋</span> Plan Feature' +
+            '</button>' +
+          '</div>' +
+        '</div>';
+
+      welcome.querySelectorAll(".starter-chip").forEach(function(chip) {
+        chip.addEventListener("click", function() {
+          var prompt = chip.getAttribute("data-prompt") || "";
+          inputEl.value = prompt;
+          inputEl.focus();
+          inputEl.style.height = "auto";
+          inputEl.style.height = Math.min(inputEl.scrollHeight, 120) + "px";
+        });
+      });
+
       messagesEl.appendChild(welcome);
     }
   }
@@ -1000,7 +1052,29 @@
     }
   }
 
-  function scrollToBottom() {
+  let userScrolledUp = false;
+
+  messagesEl.addEventListener("scroll", function() {
+    var threshold = 45;
+    var distFromBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight;
+    userScrolledUp = distFromBottom > threshold;
+    if (scrollBottomBtn) {
+      scrollBottomBtn.classList.toggle("hidden", !userScrolledUp);
+    }
+  });
+
+  if (scrollBottomBtn) {
+    scrollBottomBtn.addEventListener("click", function() {
+      userScrolledUp = false;
+      scrollToBottom(true);
+      scrollBottomBtn.classList.add("hidden");
+    });
+  }
+
+  function scrollToBottom(force) {
+    if (!force && userScrolledUp) {
+      return; // Smart Scroll Lock: preserve reading position
+    }
     requestAnimationFrame(function() {
       messagesEl.scrollTop = messagesEl.scrollHeight;
     });
@@ -1116,11 +1190,47 @@
     if (!text) return "";
     var html = text;
 
+    // 1. Code blocks with Antigravity-style Toolbar (Language Tag + Copy + Insert at Cursor)
     html = html.replace(/```(\w*)\n([\s\S]*?)```/g, function(_, lang, code) {
-      return '<pre><code class="language-' + (lang || "text") + '">' +
-        escapeHtml(code.trim()) + "</code></pre>";
+      var language = (lang || "code").toLowerCase();
+      var cleanCode = code.trim();
+      var enc = encodeURIComponent(cleanCode);
+
+      return '<div class="code-block-wrapper">' +
+        '<div class="code-header">' +
+          '<span class="code-lang-tag">' + escapeHtml(language.toUpperCase()) + '</span>' +
+          '<div class="code-actions">' +
+            '<button class="code-action-btn copy-code-btn" type="button" data-code="' + enc + '" title="Copy code snippet">📋 Copy</button>' +
+            '<button class="code-action-btn insert-code-btn" type="button" data-code="' + enc + '" title="Insert snippet at cursor in editor">📥 Insert</button>' +
+          '</div>' +
+        '</div>' +
+        '<pre><code class="language-' + escapeHtml(language) + '">' +
+          escapeHtml(cleanCode) +
+        '</code></pre>' +
+      '</div>';
     });
 
+    // 2. GFM Tables Parser
+    html = html.replace(/((?:\|[^\n]+\|\r?\n)+)/g, function(tableBlock) {
+      var lines = tableBlock.trim().split("\n");
+      if (lines.length < 2) return tableBlock;
+      var headerLine = lines[0];
+      var sepLine = lines[1];
+      if (sepLine.indexOf("-") === -1) return tableBlock;
+
+      var parseCells = function(row, tag) {
+        var cells = row.split("|").slice(1, -1);
+        return "<tr>" + cells.map(function(c) {
+          return "<" + tag + ">" + escapeHtml(c.trim()) + "</" + tag + ">";
+        }).join("") + "</tr>";
+      };
+
+      var thead = "<thead>" + parseCells(headerLine, "th") + "</thead>";
+      var tbody = "<tbody>" + lines.slice(2).map(function(l) { return parseCells(l, "td"); }).join("") + "</tbody>";
+      return '<div class="table-wrapper"><table class="markdown-table">' + thead + tbody + "</table></div>";
+    });
+
+    // 3. Inline formatting
     html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
     html = html.replace(/^### (.+)$/gm, "<h3>$1</h3>");
     html = html.replace(/^## (.+)$/gm, "<h2>$1</h2>");
