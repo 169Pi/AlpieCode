@@ -186,7 +186,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
   /* ---- Streaming ---- */
 
-  private _stream(task: string, image?: string, reasoningLevel?: "high" | "medium" | "low") {
+  private _stream(task: string, image?: string, reasoningLevel?: "thinking" | "no-thinking" | "high" | "medium" | "low" | string) {
     this._abort();
 
     if (!this._activeId) { this._newConv(task); }
@@ -1399,31 +1399,24 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     </div>
     <div id="input-options">
       <div id="reasoning-selector" class="reasoning-selector">
-        <button id="reasoning-btn" class="reasoning-btn" type="button" title="169Pi Model Reasoning Effort">
-          <span id="reasoning-icon">⚖️</span>
-          <span id="reasoning-label">169Pi Med</span>
+        <button id="reasoning-btn" class="reasoning-btn" type="button" title="Model Thinking Mode">
+          <span id="reasoning-icon">💭</span>
+          <span id="reasoning-label">Thinking</span>
           <span class="reasoning-arrow">⌃</span>
         </button>
         <div id="reasoning-menu" class="reasoning-menu hidden">
-          <div class="reasoning-option" data-level="high">
-            <span class="ro-icon">🧠</span>
+          <div class="reasoning-option active" data-level="thinking">
+            <span class="ro-icon">💭</span>
             <div class="ro-info">
-              <div class="ro-title">High</div>
-              <div class="ro-desc">Deep reasoning & maximal accuracy</div>
+              <div class="ro-title">Thinking Mode</div>
+              <div class="ro-desc">Deep reasoning trace (collapsible)</div>
             </div>
           </div>
-          <div class="reasoning-option active" data-level="medium">
-            <span class="ro-icon">⚖️</span>
-            <div class="ro-info">
-              <div class="ro-title">Medium (Default)</div>
-              <div class="ro-desc">Balanced speed and depth</div>
-            </div>
-          </div>
-          <div class="reasoning-option" data-level="low">
+          <div class="reasoning-option" data-level="no-thinking">
             <span class="ro-icon">⚡</span>
             <div class="ro-info">
-              <div class="ro-title">Low (Fast)</div>
-              <div class="ro-desc">Fast generation, direct code</div>
+              <div class="ro-title">No-Thinking Mode</div>
+              <div class="ro-desc">Direct execution without reasoning trace</div>
             </div>
           </div>
         </div>

@@ -133,17 +133,19 @@
 
   let activeSlashIndex = 0;
   let currentFilteredCommands = [];
-  let currentReasoningLevel = "medium";
+  let currentReasoningLevel = "thinking";
 
   try {
     const saved = localStorage.getItem("alpiecode.reasoningLevel");
-    if (saved && (saved === "high" || saved === "medium" || saved === "low")) {
-      currentReasoningLevel = saved;
+    if (saved === "no-thinking" || saved === "low") {
+      currentReasoningLevel = "no-thinking";
+    } else if (saved === "thinking" || saved === "high" || saved === "medium") {
+      currentReasoningLevel = "thinking";
     }
   } catch(e) {}
   updateReasoningUI(currentReasoningLevel);
 
-  // ---- Reasoning Level Dropdown ----
+  // ---- Reasoning Level Dropdown (Thinking vs No-Thinking) ----
   if (reasoningBtn && reasoningMenu) {
     reasoningBtn.addEventListener("click", function(e) {
       e.stopPropagation();
@@ -172,11 +174,14 @@
   function updateReasoningUI(level) {
     if (!reasoningIcon || !reasoningLabel) return;
     const labels = {
-      high: { icon: "🧠", text: "169Pi High" },
-      medium: { icon: "⚖️", text: "169Pi Med" },
-      low: { icon: "⚡", text: "169Pi Low" }
+      "thinking": { icon: "💭", text: "Thinking" },
+      "no-thinking": { icon: "⚡", text: "No-Thinking" },
+      // Backward compatibility aliases
+      "high": { icon: "💭", text: "Thinking" },
+      "medium": { icon: "💭", text: "Thinking" },
+      "low": { icon: "⚡", text: "No-Thinking" }
     };
-    const info = labels[level] || labels.medium;
+    const info = labels[level] || labels["thinking"];
     reasoningIcon.textContent = info.icon;
     reasoningLabel.textContent = info.text;
 
@@ -808,11 +813,10 @@
     if (!currentThinkingEl) {
       var block = document.createElement("div");
       block.className = "thinking-block";
-      if (!showThinking) block.style.display = "none";
 
       var hdr = document.createElement("div");
       hdr.className = "thinking-header";
-      hdr.innerHTML = '<span class="chevron">\u25bc</span> <span>\ud83d\udcad Thinking</span>';
+      hdr.innerHTML = '<span class="chevron">\u25bc</span> <span class="thinking-title">\ud83d\udcad Thinking Process</span> <span class="thinking-hint">(click to toggle)</span>';
 
       var content = document.createElement("div");
       content.className = "thinking-content";

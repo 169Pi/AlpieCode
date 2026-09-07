@@ -73,7 +73,7 @@ export interface StreamOptions {
   workdir: string;
   sessionId?: string;
   image?: string;
-  reasoningLevel?: "high" | "medium" | "low";
+  reasoningLevel?: "thinking" | "no-thinking" | "high" | "medium" | "low" | string;
 }
 
 /**

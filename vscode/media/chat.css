@@ -302,45 +302,76 @@ body {
 .thinking-block {
   padding: 6px 10px;
   border-radius: 6px;
-  background: rgba(167,139,250,0.06);
-  border-left: 2px solid rgba(167,139,250,0.4);
+  background: rgba(167, 139, 250, 0.06);
+  border: 1px solid rgba(167, 139, 250, 0.2);
+  border-left: 3px solid rgba(167, 139, 250, 0.7);
   font-size: 11px;
+  margin-bottom: 6px;
   animation: fadeIn 0.15s ease-out;
 }
 
 .thinking-header {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   cursor: pointer;
   user-select: none;
   font-weight: 500;
-  color: var(--vscode-descriptionForeground, rgba(255,255,255,0.6));
+  color: var(--vscode-descriptionForeground, rgba(255, 255, 255, 0.75));
   font-size: 11px;
+  padding: 2px 0;
+  transition: color 0.15s;
+}
+
+.thinking-header:hover {
+  color: var(--vscode-foreground, #ffffff);
 }
 
 .thinking-header .chevron {
-  transition: transform 0.15s;
+  transition: transform 0.2s ease;
   font-size: 9px;
+  display: inline-block;
 }
+
 .thinking-header.collapsed .chevron {
   transform: rotate(-90deg);
 }
 
+.thinking-title {
+  font-weight: 600;
+  color: #c4b5fd;
+}
+
+.thinking-hint {
+  font-size: 9.5px;
+  opacity: 0.5;
+  margin-left: auto;
+}
+
 .thinking-content {
-  margin-top: 4px;
-  font-style: italic;
+  margin-top: 6px;
+  font-style: normal;
   overflow: hidden;
-  transition: max-height 0.2s ease;
-  max-height: 200px;
+  transition: max-height 0.25s ease, opacity 0.2s ease, margin-top 0.2s ease;
+  max-height: 450px;
   overflow-y: auto;
   white-space: pre-wrap;
-  line-height: 1.4;
-  color: rgba(255,255,255,0.7);
+  line-height: 1.45;
+  color: var(--vscode-foreground, rgba(255, 255, 255, 0.85));
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 10.5px;
+  padding: 6px 8px;
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 4px;
+  opacity: 1;
 }
+
 .thinking-content.collapsed {
   max-height: 0;
   margin-top: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  opacity: 0;
 }
 
 /* ---- Tool Card / Result ---- */

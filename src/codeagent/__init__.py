@@ -19,20 +19,17 @@ from typing import Optional, Any, Dict
 __version__ = "7.0.2"
 
 
-def run(task: str, workdir: str = ".", reasoning_level: str = "medium", **kwargs):
+def run(task: str, workdir: str = ".", reasoning_level: str = "thinking", **kwargs):
     """Run an autonomous coding task programmatically."""
     from .config import load_config
     from .agent import run_agent
     cfg = load_config()
-    if reasoning_level == "low":
+    if reasoning_level in ("low", "no-thinking", "nothinking", "none"):
         cfg.enable_thinking = False
         cfg.temperature = 0.0
-    elif reasoning_level == "medium":
+    elif reasoning_level in ("thinking", "high", "medium"):
         cfg.enable_thinking = True
-        cfg.temperature = 0.1
-    elif reasoning_level == "high":
-        cfg.enable_thinking = True
-        cfg.temperature = 0.2
+        cfg.temperature = 0.6
     return run_agent(task, Path(workdir).resolve(), cfg, verbose=kwargs.get("verbose", True))
 
 

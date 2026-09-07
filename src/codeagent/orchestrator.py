@@ -161,11 +161,11 @@ class AgentOrchestrator:
         # ── Adaptive thinking ──
         if cfg.enable_thinking:
             enable_thinking = True
+        elif complexity in ("qa", "low", "no-thinking"):
+            enable_thinking = False
+            yield AgentEvent("adaptive_mode", {"message": "No-thinking mode or simple task, skipping reasoning trace."})
         else:
             enable_thinking = task_context.enable_thinking
-            if enable_thinking and complexity in ("qa", "low"):
-                enable_thinking = False
-                yield AgentEvent("adaptive_mode", {"message": "Simple task detected, skipping deep reasoning."})
 
         # ── Goal-driven turn loop (no fixed limit) ──
         progress_monitor = ProgressMonitor()

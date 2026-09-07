@@ -140,22 +140,19 @@ if HAS_FASTAPI:
 
         event_queue = queue.Queue()
 
-        reasoning_level = str(body.get("reasoning_level", "medium")).lower()
+        reasoning_level = str(body.get("reasoning_level", "thinking")).lower()
         complexity = str(body.get("complexity", reasoning_level)).lower()
-        # Normalize complexity
-        if complexity not in ("low", "medium", "high"):
-            complexity = "medium"
+        # Normalize reasoning mode
         import copy
         turn_cfg = copy.copy(app.state.cfg)
-        if complexity == "low":
+        if reasoning_level in ("no-thinking", "nothinking", "none", "low") or complexity in ("no-thinking", "low"):
             turn_cfg.enable_thinking = False
             turn_cfg.temperature = 0.0
-        elif complexity == "medium":
-            turn_cfg.enable_thinking = False
-            turn_cfg.temperature = 0.1
-        else:  # "high"
+            complexity = "low"
+        else:  # "thinking", "high", "medium"
             turn_cfg.enable_thinking = True
-            turn_cfg.temperature = 0.2
+            turn_cfg.temperature = 0.6
+            complexity = "high"
 
         def producer():
             try:
