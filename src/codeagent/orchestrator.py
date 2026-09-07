@@ -329,7 +329,17 @@ class AgentOrchestrator:
                         })
                         session.context.add_tool_result(res.tool_call_id, res.content)
 
-                yield AgentEvent("message", {"content": resp.content})
+                if resp.content:
+                    # Clean duplicate DONE: if repeated
+                    if resp.content.upper().count("DONE:") > 1:
+                        parts = re.split(r"(?i)\bDONE:\s*", resp.content)
+                        if len(parts) >= 3 and parts[1].strip() == parts[2].strip():
+                            resp.content = parts[0] + "DONE: " + parts[1].strip()
+
+                # Only yield 'message' if tokens were NOT already streamed chunk-by-chunk
+                if not (hasattr(self.backend, "chat_completion_stream") and not is_offline):
+                    yield AgentEvent("message", {"content": resp.content})
+
                 extract_and_save_memories(session.workdir, session.context.messages)
 
                 # Generate and write real walkthrough.md file to the project workspace
@@ -423,7 +433,17 @@ class AgentOrchestrator:
                     except Exception:
                         pass
 
-                yield AgentEvent("message", {"content": resp.content})
+                if resp.content:
+                    # Clean duplicate DONE: if repeated
+                    if resp.content.upper().count("DONE:") > 1:
+                        parts = re.split(r"(?i)\bDONE:\s*", resp.content)
+                        if len(parts) >= 3 and parts[1].strip() == parts[2].strip():
+                            resp.content = parts[0] + "DONE: " + parts[1].strip()
+
+                # Only yield 'message' if tokens were NOT already streamed chunk-by-chunk
+                if not (hasattr(self.backend, "chat_completion_stream") and not is_offline):
+                    yield AgentEvent("message", {"content": resp.content})
+
                 extract_and_save_memories(session.workdir, session.context.messages)
                 yield AgentEvent("done", {"summary": resp.content})
                 return

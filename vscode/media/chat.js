@@ -567,6 +567,10 @@
         currentAssistantEl = null;
         currentAssistantText = "";
         currentThinkingEl = null;
+        unifiedWorkBlock = null;
+        unifiedWorkHeader = null;
+        unifiedWorkContent = null;
+        unifiedStartTime = Date.now();
         break;
       case "streamEnd":
         setStreaming(false);
@@ -942,19 +946,17 @@
     scrollToBottom();
   }
 
-  // ---- Antigravity Thought Capsule System ----
-  var currentThoughtBlock = null;
-  var currentThoughtHeader = null;
-  var currentThoughtContent = null;
-  var thoughtStartTime = 0;
-  var thoughtTimerInterval = null;
+  // ---- Antigravity Unified Work Capsule System (Single Collapsible Work Header) ----
+  var unifiedWorkBlock = null;
+  var unifiedWorkHeader = null;
+  var unifiedWorkContent = null;
+  var unifiedStartTime = 0;
+  var unifiedTimerInterval = null;
 
-  function startThinkingCapsule(data) {
-    if (thoughtTimerInterval) {
-      clearInterval(thoughtTimerInterval);
-      thoughtTimerInterval = null;
-    }
-    thoughtStartTime = (data && data.time) ? data.time * 1000 : Date.now();
+  function ensureWorkCapsule() {
+    if (unifiedWorkBlock) return;
+
+    unifiedStartTime = Date.now();
 
     var block = document.createElement("div");
     block.className = "thought-capsule-block";
@@ -964,7 +966,7 @@
     hdr.setAttribute("role", "button");
     hdr.setAttribute("tabindex", "0");
     hdr.innerHTML =
-      '<span class="thought-capsule-title running">Thinking (1s)...</span>' +
+      '<span class="thought-capsule-title running">Worked for 1s...</span>' +
       '<span class="thought-capsule-chevron">›</span>';
 
     var content = document.createElement("div");
@@ -980,17 +982,18 @@
     block.appendChild(content);
     messagesEl.appendChild(block);
 
-    currentThoughtBlock = block;
-    currentThoughtHeader = hdr;
-    currentThoughtContent = content;
+    unifiedWorkBlock = block;
+    unifiedWorkHeader = hdr;
+    unifiedWorkContent = content;
     currentThinkingEl = content;
 
-    thoughtTimerInterval = setInterval(function() {
-      if (!currentThoughtHeader) return;
-      var elapsed = Math.max(1, Math.round((Date.now() - thoughtStartTime) / 1000));
-      var titleEl = currentThoughtHeader.querySelector(".thought-capsule-title");
+    if (unifiedTimerInterval) clearInterval(unifiedTimerInterval);
+    unifiedTimerInterval = setInterval(function() {
+      if (!unifiedWorkHeader) return;
+      var elapsed = Math.max(1, Math.round((Date.now() - unifiedStartTime) / 1000));
+      var titleEl = unifiedWorkHeader.querySelector(".thought-capsule-title");
       if (titleEl && titleEl.classList.contains("running")) {
-        titleEl.textContent = "Thinking (" + elapsed + "s)...";
+        titleEl.textContent = "Worked for " + elapsed + "s...";
       }
     }, 1000);
 
@@ -1000,41 +1003,49 @@
   function appendThinkingDelta(data) {
     var delta = (data && data.delta) ? data.delta : (typeof data === "string" ? data : "");
     if (!delta) return;
-    if (!currentThoughtBlock) {
-      startThinkingCapsule({ time: Date.now() / 1000 });
-    }
-    currentThoughtContent.textContent += delta;
+    ensureWorkCapsule();
+    unifiedWorkContent.textContent += delta;
     scrollToBottom();
-  }
-
-  function endThinkingCapsule(data) {
-    if (thoughtTimerInterval) {
-      clearInterval(thoughtTimerInterval);
-      thoughtTimerInterval = null;
-    }
-    var duration = (data && data.duration) ? data.duration : Math.max(1, Math.round((Date.now() - thoughtStartTime) / 1000));
-    if (currentThoughtHeader) {
-      var titleEl = currentThoughtHeader.querySelector(".thought-capsule-title");
-      if (titleEl) {
-        titleEl.className = "thought-capsule-title";
-        titleEl.textContent = "Thought for " + duration + "s";
-      }
-      // Cleanly collapse by default when finished (Antigravity standard)
-      currentThoughtHeader.classList.remove("expanded");
-      if (currentThoughtContent) {
-        currentThoughtContent.classList.add("collapsed");
-      }
-    }
   }
 
   function appendThinking(text) {
     if (!text) return;
-    if (!currentThoughtBlock) {
-      startThinkingCapsule({ time: Date.now() / 1000 });
+    ensureWorkCapsule();
+    if (unifiedWorkContent.textContent.trim()) {
+      unifiedWorkContent.textContent += "\n\n" + text;
+    } else {
+      unifiedWorkContent.textContent = text;
     }
-    currentThoughtContent.textContent = text;
-    endThinkingCapsule({ duration: 5 });
     scrollToBottom();
+  }
+
+  function finalizeWorkCapsule(durationSec) {
+    if (unifiedTimerInterval) {
+      clearInterval(unifiedTimerInterval);
+      unifiedTimerInterval = null;
+    }
+    if (!unifiedWorkHeader) return;
+
+    var elapsed = durationSec || Math.max(1, Math.round((Date.now() - unifiedStartTime) / 1000));
+    var titleEl = unifiedWorkHeader.querySelector(".thought-capsule-title");
+    if (titleEl) {
+      titleEl.className = "thought-capsule-title";
+      titleEl.textContent = "Worked for " + elapsed + "s";
+    }
+
+    // Cleanly collapse by default when finished (Antigravity standard)
+    unifiedWorkHeader.classList.remove("expanded");
+    if (unifiedWorkContent) {
+      unifiedWorkContent.classList.add("collapsed");
+    }
+  }
+
+  function startThinkingCapsule(data) {
+    ensureWorkCapsule();
+  }
+
+  function endThinkingCapsule(data) {
+    // Keep unified work capsule running across tool turns; only finalize when answer/done arrives
   }
 
   // ---- Antigravity Artifact Card for walkthrough.md ----
@@ -1125,11 +1136,18 @@
       });
     });
 
-    // Open walkthrough.md button
+    // Click card header or open button to open native Walkthrough Preview (Antigravity standard!)
+    var cardHdr = card.querySelector(".artifact-card-header");
+    if (cardHdr) {
+      cardHdr.addEventListener("click", function() {
+        vscode.postMessage({ action: "openWalkthrough" });
+      });
+    }
     var openBtn = card.querySelector("#open-walkthrough-btn");
     if (openBtn) {
-      openBtn.addEventListener("click", function() {
-        vscode.postMessage({ action: "openFile", path: filePath });
+      openBtn.addEventListener("click", function(e) {
+        e.stopPropagation();
+        vscode.postMessage({ action: "openWalkthrough" });
       });
     }
 
@@ -1234,8 +1252,8 @@
   }
 
   function appendAssistantToken(text) {
-    if (thoughtTimerInterval || (currentThoughtHeader && currentThoughtHeader.querySelector(".thought-capsule-title.running"))) {
-      endThinkingCapsule();
+    if (unifiedWorkHeader && unifiedWorkHeader.querySelector(".thought-capsule-title.running")) {
+      finalizeWorkCapsule();
     }
     currentThinkingEl = null;
     if (!currentAssistantEl) {
@@ -1251,6 +1269,7 @@
   }
 
   function finalizeAssistantMessage() {
+    finalizeWorkCapsule();
     if (currentAssistantEl) {
       var dot = currentAssistantEl.querySelector(".streaming-dot");
       if (dot) dot.remove();
@@ -1268,6 +1287,9 @@
       }
     }
     currentAssistantEl = null;
+    unifiedWorkBlock = null;
+    unifiedWorkHeader = null;
+    unifiedWorkContent = null;
     currentAssistantText = "";
   }
 

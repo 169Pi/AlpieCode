@@ -1048,7 +1048,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       case "insertCodeAtCursor":
         this._insertCodeAtCursor(m.code);
         break;
-            case "openDiffForFile":
+            case "openWalkthrough":
+        this._openMarkdownPreview("walkthrough.md");
+        break;
+      case "openDiffForFile":
         this._openDiffForFile(m.path);
         break;
       case "fixDiagnostics":
@@ -1102,6 +1105,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       }
     } catch {}
 
+    // Automatically open Walkthrough Preview tab in editor (Antigravity standard)
+    this._openMarkdownPreview("walkthrough.md");
+
     this._post({
       action: "walkthrough",
       data: {
@@ -1117,6 +1123,26 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   /* ---- Editor & Source Control Integrations ---- */
 
   /** Open VS Code native side-by-side diff for any file against git HEAD or empty base. */
+  /** Open native VS Code Markdown Preview tab (Walkthrough (preview)). */
+  private async _openMarkdownPreview(filePath: string) {
+    if (!filePath) return;
+    const abs = path.isAbsolute(filePath) ? filePath : path.join(this._workdir(), filePath);
+    const local = this._toLocalPath(abs);
+    if (!fs.existsSync(local)) return;
+
+    const uri = vscode.Uri.file(local);
+    try {
+      await vscode.commands.executeCommand("markdown.showPreview", uri);
+    } catch {
+      try {
+        await vscode.commands.executeCommand("markdown.showPreviewToSide", uri);
+      } catch {
+        const doc = await vscode.workspace.openTextDocument(uri);
+        await vscode.window.showTextDocument(doc, { preview: true, viewColumn: vscode.ViewColumn.One });
+      }
+    }
+  }
+
   private async _openDiffForFile(relPath: string) {
     if (!relPath) return;
     const absPath = this._toLocalPath(relPath);
