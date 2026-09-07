@@ -39,7 +39,24 @@
  */
 
 (function () {
-  const vscode = acquireVsCodeApi();
+    const vscode = acquireVsCodeApi();
+
+  // ---- Monochromatic Vector Iconography (Google Antigravity Standard) ----
+  const ICONS = {
+    sparkle: '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M7.5 0a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0V.5a.5.5 0 0 1 .5-.5zm0 13a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2a.5.5 0 0 1 .5-.5zm7.5-5.5a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1 0-1h2a.5.5 0 0 1 .5.5zm-13 0a.5.5 0 0 1-.5.5H.5a.5.5 0 0 1 0-1h1a.5.5 0 0 1 .5.5zM8 4a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"/></svg>',
+    document: '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M4 0h5.5v1H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V6.5h1V14a3 3 0 0 1-3 3H4a3 3 0 0 1-3-3V3a3 3 0 0 1 3-3z"/><path d="M9.5 0v4.5A1.5 1.5 0 0 0 11 6h4.5l-6-6z"/></svg>',
+    terminal: '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path fill-rule="evenodd" d="M1.5 2.5a.5.5 0 0 0-.5.5v10a.5.5 0 0 0 .5.5h13a.5.5 0 0 0 .5-.5V3a.5.5 0 0 0-.5-.5h-13zM0 3a1.5 1.5 0 0 1 1.5-1.5h13A1.5 1.5 0 0 1 16 3v10a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 0 13V3zm3.854 2.146a.5.5 0 0 1 0 .708l-1.5 1.5a.5.5 0 0 1-.708-.708L2.793 6 1.646 4.854a.5.5 0 1 1 .708-.708l1.5 1.5zM6.5 8.5a.5.5 0 0 1 .5-.5h3a.5.5 0 0 1 0 1H7a.5.5 0 0 1-.5-.5z"/></svg>',
+    check: '<svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M13.854 3.646a.5.5 0 0 1 0 .708l-7 7a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L6.5 10.293l6.646-6.647a.5.5 0 0 1 .708 0z"/></svg>',
+    cross: '<svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z"/></svg>',
+    github: '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>',
+    diff: '<svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path fill-rule="evenodd" d="M1 2.5A1.5 1.5 0 0 1 2.5 1h11A1.5 1.5 0 0 1 15 2.5v11a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 1 13.5v-11zM2.5 2a.5.5 0 0 0-.5.5v11a.5.5 0 0 0 .5.5h5V2h-5zm6 12h5a.5.5 0 0 0 .5-.5v-11a.5.5 0 0 0-.5-.5h-5v12z"/></svg>',
+    bolt: '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M11.251.068a.5.5 0 0 1 .42.58L10.077 6H14.5a.5.5 0 0 1 .372.832l-9.5 10.5a.5.5 0 0 1-.844-.512L5.923 10H1.5a.5.5 0 0 1-.372-.832l9.5-10.5a.5.5 0 0 1 .123-.1z"/></svg>',
+    brain: '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 0 0-7 7c0 2.38 1.19 4.47 3 5.74V15a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-1.26c1.81-1.27 3-3.36 3-5.74a7 7 0 0 0-7-7zm2 13H6v-1h4v1zm1.75-2.82l-.46.32H4.71l-.46-.32A5.98 5.98 0 0 1 2 8a6 6 0 1 1 12 0c0 1.95-.94 3.7-2.25 4.88z"/></svg>',
+    pencil: '<svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M12.854.146a.5.5 0 0 0-.707 0L10.5 1.793 14.207 5.5l1.647-1.646a.5.5 0 0 0 0-.708l-3-3zm.646 6.061L9.793 2.5 3.293 9H3.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.207l6.5-6.5zm-7.468 7.468A.5.5 0 0 1 6 13.5V13h-.5a.5.5 0 0 1-.5-.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.5-.5V10h-.5a.499.499 0 0 1-.175-.032l-.179.178a.5.5 0 0 0-.11.168l-2 5a.5.5 0 0 0 .65.65l5-2a.5.5 0 0 0 .168-.11l.178-.178z"/></svg>',
+    search: '<svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z"/></svg>',
+    folder: '<svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M.54 3.87.5 3a2 2 0 0 1 2-2h3.672a2 2 0 0 1 1.414.586l.828.828A2 2 0 0 0 9.828 3h4.672a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H2.5a2 2 0 0 1-2-2V4.5a2 2 0 0 1 .04-.63zM1.5 4.5v7.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1H9.828a3 3 0 0 1-2.12-.879l-.83-.828A1 1 0 0 0 6.172 2H2.5a1 1 0 0 0-1 1v1.5z"/></svg>',
+    copy: '<svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/><path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/></svg>',
+  };
 
   // DOM Elements
   const messagesEl        = document.getElementById("chat-messages");
@@ -95,49 +112,49 @@
       cmd: "/plan",
       title: "plan",
       desc: "Analyze codebase & generate an implementation plan without making changes",
-      icon: "📋",
+      icon: ICONS.document,
       prompt: "/plan "
     },
     {
       cmd: "/explain",
       title: "explain",
       desc: "Explain a file, function, architecture, or codebase concept in detail",
-      icon: "💡",
+      icon: ICONS.sparkle,
       prompt: "/explain "
     },
     {
       cmd: "/doctor",
       title: "doctor",
       desc: "Run system diagnostic health checks (Python, CUDA, Compilers, Network)",
-      icon: "🩺",
+      icon: ICONS.bolt,
       prompt: "Run alpiecode doctor diagnostic checks and summarize results"
     },
     {
       cmd: "/test",
       title: "test",
       desc: "Generate comprehensive unit tests and execute automated verification",
-      icon: "🧪",
+      icon: ICONS.terminal,
       prompt: "Generate unit tests for this project, run them in sandbox, and ensure all tests pass"
     },
     {
       cmd: "/diff",
       title: "diff",
       desc: "Show recent changes made by AlpieCode since last checkpoint",
-      icon: "🔍",
+      icon: ICONS.diff,
       prompt: "Show git diff of recent changes made in this session"
     },
     {
       cmd: "/push",
       title: "push",
       desc: "Push completed project changes to GitHub repository",
-      icon: "🐙",
+      icon: ICONS.github,
       action: "push"
     },
     {
       cmd: "/clear",
       title: "clear",
       desc: "Start a fresh, clean conversation session",
-      icon: "🗑️",
+      icon: ICONS.cross,
       action: "clear"
     }
   ];
@@ -185,15 +202,15 @@
   function updateReasoningUI(level) {
     if (!reasoningIcon || !reasoningLabel) return;
     const labels = {
-      "thinking": { icon: "💭", text: "Thinking" },
-      "no-thinking": { icon: "⚡", text: "No-Thinking" },
+      "thinking": { icon: ICONS.brain, text: "Thinking" },
+      "no-thinking": { icon: ICONS.bolt, text: "No-Thinking" },
       // Backward compatibility aliases
-      "high": { icon: "💭", text: "Thinking" },
-      "medium": { icon: "💭", text: "Thinking" },
-      "low": { icon: "⚡", text: "No-Thinking" }
+      "high": { icon: ICONS.brain, text: "Thinking" },
+      "medium": { icon: ICONS.brain, text: "Thinking" },
+      "low": { icon: ICONS.bolt, text: "No-Thinking" }
     };
     const info = labels[level] || labels["thinking"];
-    reasoningIcon.textContent = info.icon;
+    reasoningIcon.innerHTML = info.icon;
     reasoningLabel.textContent = info.text;
 
     document.querySelectorAll(".reasoning-option").forEach(function(opt) {
@@ -407,7 +424,7 @@
     if (!data || data.status === "complete" || data.status === "idle") {
       if (data && data.status === "complete") {
         var sp = bar.querySelector(".live-build-spinner");
-        if (sp) sp.textContent = "✅";
+        if (sp) sp.innerHTML = ICONS.check;
         txt.textContent = data.message || "Complete";
         setTimeout(function() {
           bar.classList.add("hidden");
@@ -423,7 +440,7 @@
     var msg = data.message || "Building...";
     var spinner = bar.querySelector(".live-build-spinner");
     if (spinner) {
-      spinner.textContent = status === "rephrasing" ? "🔄" : (status === "complete" ? "✅" : "🔨");
+      spinner.innerHTML = status === "rephrasing" ? ICONS.sparkle : (status === "complete" ? ICONS.check : ICONS.terminal);
     }
     txt.textContent = msg;
   }
@@ -443,7 +460,7 @@
 
     card.innerHTML =
       '<div class="github-push-header">' +
-        '<span class="github-icon">🐙</span>' +
+        '<span class="github-icon">' + ICONS.github + '</span>' +
         '<span class="github-push-title">GitHub Code Push</span>' +
       '</div>' +
       '<div class="github-push-body">' +
@@ -454,9 +471,9 @@
         '</div>' +
       '</div>' +
       '<div class="github-push-actions">' +
-        '<button id="push-confirm-btn" class="push-btn-confirm">✓ Yes, Push to GitHub</button>' +
-        '<button id="push-change-btn" class="push-btn-change">✎ Change Push ID</button>' +
-        '<button id="push-skip-btn" class="push-btn-skip">✕ Skip</button>' +
+        '<button id="push-confirm-btn" class="push-btn-confirm">' + ICONS.check + ' Yes, Push to GitHub</button>' +
+        '<button id="push-change-btn" class="push-btn-change">' + ICONS.pencil + ' Change Push ID</button>' +
+        '<button id="push-skip-btn" class="push-btn-skip">' + ICONS.cross + ' Skip</button>' +
       '</div>';
 
     card.querySelector("#push-confirm-btn").addEventListener("click", function() {
@@ -493,6 +510,9 @@
     switch (message.action) {
       case "serverStatus":
         updateStatus(message.status);
+        break;
+      case "walkthrough":
+        renderWalkthroughCard(message.data);
         break;
       case "userMessage":
         clearWelcome();
@@ -625,7 +645,7 @@
       welcome.id = "welcome-card";
       welcome.innerHTML =
         '<div class="welcome-header">' +
-          '<div class="welcome-icon">⚡</div>' +
+          '<div class="welcome-icon">' + ICONS.sparkle + '</div>' +
           '<h2>AlpieCode Agent</h2>' +
           '<p class="welcome-sub">Autonomous AI pair programmer powered by 169Pi</p>' +
         '</div>' +
@@ -633,16 +653,16 @@
           '<div class="starter-chips-label">Quick Actions</div>' +
           '<div class="starter-chips">' +
             '<button class="starter-chip" data-prompt="Generate comprehensive unit tests for this project and verify them" type="button">' +
-              '<span class="chip-icon">🧪</span> Unit Tests' +
+              '<span class="chip-icon">' + ICONS.terminal + '</span> Unit Tests' +
             '</button>' +
             '<button class="starter-chip" data-prompt="Audit this codebase, identify bugs or bottlenecks, and optimize them" type="button">' +
-              '<span class="chip-icon">🔍</span> Fix Bugs & Audit' +
+              '<span class="chip-icon">' + ICONS.search + '</span> Fix Bugs & Audit' +
             '</button>' +
             '<button class="starter-chip" data-prompt="Explain the architecture, key workflows, and data structures in this project" type="button">' +
-              '<span class="chip-icon">💡</span> Explain Architecture' +
+              '<span class="chip-icon">' + ICONS.document + '</span> Explain Architecture' +
             '</button>' +
             '<button class="starter-chip" data-prompt="Create an implementation plan to build a new feature cleanly" type="button">' +
-              '<span class="chip-icon">📋</span> Plan Feature' +
+              '<span class="chip-icon">' + ICONS.pencil + '</span> Plan Feature' +
             '</button>' +
           '</div>' +
         '</div>';
@@ -673,6 +693,15 @@
     switch (event.type) {
       case "status":
         updateBuildStatus(event.data);
+        break;
+      case "thinking_start":
+        startThinkingCapsule(event.data);
+        break;
+      case "thinking_delta":
+        appendThinkingDelta(event.data);
+        break;
+      case "thinking_end":
+        endThinkingCapsule(event.data);
         break;
       case "thinking":
         var thinkText = event.data.content || event.data.text || event.data.delta || "";
@@ -872,31 +901,175 @@
     scrollToBottom();
   }
 
-  function appendThinking(text) {
-    if (!currentThinkingEl) {
-      var block = document.createElement("div");
-      block.className = "thinking-block";
+  // ---- Antigravity Thought Capsule System ----
+  var currentThoughtBlock = null;
+  var currentThoughtHeader = null;
+  var currentThoughtContent = null;
+  var thoughtStartTime = 0;
+  var thoughtTimerInterval = null;
 
-      var hdr = document.createElement("div");
-      hdr.className = "thinking-header";
-      hdr.innerHTML = '<span class="chevron">\u25bc</span> <span class="thinking-title">\ud83d\udcad Thinking Process</span> <span class="thinking-hint">(click to toggle)</span>';
-
-      var content = document.createElement("div");
-      content.className = "thinking-content";
-      content.textContent = text;
-
-      hdr.addEventListener("click", function() {
-        hdr.classList.toggle("collapsed");
-        content.classList.toggle("collapsed");
-      });
-
-      block.appendChild(hdr);
-      block.appendChild(content);
-      messagesEl.appendChild(block);
-      currentThinkingEl = content;
-    } else {
-      currentThinkingEl.textContent += (currentThinkingEl.textContent ? "\n" : "") + text;
+  function startThinkingCapsule(data) {
+    if (thoughtTimerInterval) {
+      clearInterval(thoughtTimerInterval);
+      thoughtTimerInterval = null;
     }
+    thoughtStartTime = (data && data.time) ? data.time * 1000 : Date.now();
+
+    var block = document.createElement("div");
+    block.className = "thought-capsule-block";
+
+    var hdr = document.createElement("div");
+    hdr.className = "thought-capsule-header expanded";
+    hdr.setAttribute("role", "button");
+    hdr.setAttribute("tabindex", "0");
+    hdr.innerHTML =
+      '<span class="thought-capsule-title running">Thinking (1s)...</span>' +
+      '<span class="thought-capsule-chevron">›</span>';
+
+    var content = document.createElement("div");
+    content.className = "thought-capsule-content";
+    content.textContent = "";
+
+    hdr.addEventListener("click", function() {
+      var isExp = hdr.classList.toggle("expanded");
+      content.classList.toggle("collapsed", !isExp);
+    });
+
+    block.appendChild(hdr);
+    block.appendChild(content);
+    messagesEl.appendChild(block);
+
+    currentThoughtBlock = block;
+    currentThoughtHeader = hdr;
+    currentThoughtContent = content;
+    currentThinkingEl = content;
+
+    thoughtTimerInterval = setInterval(function() {
+      if (!currentThoughtHeader) return;
+      var elapsed = Math.max(1, Math.round((Date.now() - thoughtStartTime) / 1000));
+      var titleEl = currentThoughtHeader.querySelector(".thought-capsule-title");
+      if (titleEl && titleEl.classList.contains("running")) {
+        titleEl.textContent = "Thinking (" + elapsed + "s)...";
+      }
+    }, 1000);
+
+    scrollToBottom();
+  }
+
+  function appendThinkingDelta(data) {
+    var delta = (data && data.delta) ? data.delta : (typeof data === "string" ? data : "");
+    if (!delta) return;
+    if (!currentThoughtBlock) {
+      startThinkingCapsule({ time: Date.now() / 1000 });
+    }
+    currentThoughtContent.textContent += delta;
+    scrollToBottom();
+  }
+
+  function endThinkingCapsule(data) {
+    if (thoughtTimerInterval) {
+      clearInterval(thoughtTimerInterval);
+      thoughtTimerInterval = null;
+    }
+    var duration = (data && data.duration) ? data.duration : Math.max(1, Math.round((Date.now() - thoughtStartTime) / 1000));
+    if (currentThoughtHeader) {
+      var titleEl = currentThoughtHeader.querySelector(".thought-capsule-title");
+      if (titleEl) {
+        titleEl.className = "thought-capsule-title";
+        titleEl.textContent = "Thought for " + duration + "s";
+      }
+      // Cleanly collapse by default when finished (Antigravity standard)
+      currentThoughtHeader.classList.remove("expanded");
+      if (currentThoughtContent) {
+        currentThoughtContent.classList.add("collapsed");
+      }
+    }
+  }
+
+  function appendThinking(text) {
+    if (!text) return;
+    if (!currentThoughtBlock) {
+      startThinkingCapsule({ time: Date.now() / 1000 });
+    }
+    currentThoughtContent.textContent = text;
+    endThinkingCapsule({ duration: 5 });
+    scrollToBottom();
+  }
+
+  // ---- Antigravity Completion Walkthrough Card ----
+  function renderWalkthroughCard(data) {
+    if (!data) return;
+    var existing = document.getElementById("walkthrough-card");
+    if (existing) existing.remove();
+
+    var card = document.createElement("div");
+    card.id = "walkthrough-card";
+    card.className = "walkthrough-card";
+
+    var files = data.files || [];
+    var commands = data.commands || [];
+
+    var filesHtml = "";
+    files.forEach(function(f) {
+      var safeF = escapeHtml(f);
+      filesHtml +=
+        '<div class="walkthrough-file-item" data-path="' + safeF + '" title="Click to open file in editor">' +
+          '<span class="file-badge edit">EDIT</span>' +
+          '<span class="file-name">' + safeF + '</span>' +
+        '</div>';
+    });
+
+    var cmdsHtml = "";
+    commands.forEach(function(c) {
+      var cmdStr = escapeHtml(c.command || "");
+      var isPass = (c.exitCode === 0 || c.exitCode === undefined);
+      cmdsHtml +=
+        '<div class="walkthrough-cmd-item">' +
+          '<span class="vector-icon">' + ICONS.terminal + '</span>' +
+          '<span class="cmd-text">' + cmdStr + '</span>' +
+          '<span class="cmd-badge ' + (isPass ? 'pass' : 'fail') + '">' + (isPass ? 'Verified' : 'Failed') + '</span>' +
+        '</div>';
+    });
+
+    card.innerHTML =
+      '<div class="walkthrough-header">' +
+        '<span class="walkthrough-icon">' + ICONS.document + '</span>' +
+        '<span>Walkthrough</span>' +
+      '</div>' +
+      '<div class="walkthrough-body">' +
+        (filesHtml ? '<div class="walkthrough-files-list">' + filesHtml + '</div>' : '') +
+        (cmdsHtml ? '<div class="walkthrough-cmds-list">' + cmdsHtml + '</div>' : '') +
+      '</div>' +
+      '<div class="walkthrough-footer">' +
+        '<div class="walkthrough-stats">' +
+          '<span class="vector-icon">' + ICONS.document + '</span>' +
+          '<span>' + files.length + ' file' + (files.length === 1 ? '' : 's') + ' touched</span>' +
+        '</div>' +
+        '<button class="review-changes-btn" id="review-changes-btn" type="button" title="View native Git diff of changes">' +
+          '<span class="vector-icon">' + ICONS.diff + '</span>' +
+          '<span>Review Changes</span>' +
+        '</button>' +
+      '</div>';
+
+    // Click file to open in editor
+    card.querySelectorAll(".walkthrough-file-item").forEach(function(item) {
+      item.addEventListener("click", function() {
+        var filePath = item.getAttribute("data-path");
+        if (filePath) {
+          vscode.postMessage({ action: "openFile", path: filePath });
+        }
+      });
+    });
+
+    // Review changes action button
+    var reviewBtn = card.querySelector("#review-changes-btn");
+    if (reviewBtn) {
+      reviewBtn.addEventListener("click", function() {
+        vscode.postMessage({ action: "reviewChanges" });
+      });
+    }
+
+    messagesEl.appendChild(card);
     scrollToBottom();
   }
 
@@ -988,17 +1161,10 @@
   }
 
   function appendAssistantToken(text) {
-    if (currentThinkingEl) {
-      var parentBlock = currentThinkingEl.closest ? currentThinkingEl.closest(".thinking-block") : currentThinkingEl.parentElement;
-      if (parentBlock) {
-        var hdr = parentBlock.querySelector(".thinking-header");
-        if (hdr && !hdr.classList.contains("collapsed")) {
-          hdr.classList.add("collapsed");
-          currentThinkingEl.classList.add("collapsed");
-        }
-      }
-      currentThinkingEl = null;
+    if (thoughtTimerInterval || (currentThoughtHeader && currentThoughtHeader.querySelector(".thought-capsule-title.running"))) {
+      endThinkingCapsule();
     }
+    currentThinkingEl = null;
     if (!currentAssistantEl) {
       currentAssistantEl = document.createElement("div");
       currentAssistantEl.className = "msg assistant";

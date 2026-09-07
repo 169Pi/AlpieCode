@@ -1448,3 +1448,237 @@ body {
 .chip-icon {
   font-size: 13px;
 }
+
+
+/* ==========================================================================
+   Google Antigravity IDE Thought Capsule & Walkthrough Design System
+   ========================================================================== */
+
+/* Antigravity Thought Capsule (Thought for Xs ›) */
+.thought-capsule-block {
+  margin: 6px 0 10px 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  animation: fadeIn 0.15s ease-out;
+}
+
+.thought-capsule-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 12px;
+  font-family: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
+  color: var(--vscode-descriptionForeground, #9da5b4);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 3px 10px;
+  border-radius: 12px;
+  transition: all 0.15s ease;
+}
+
+.thought-capsule-header:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--vscode-foreground, #e0e0e0);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.thought-capsule-title {
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.thought-capsule-title.running {
+  color: #93c5fd;
+}
+
+.thought-capsule-chevron {
+  font-size: 11px;
+  line-height: 1;
+  transition: transform 0.18s ease;
+  opacity: 0.7;
+}
+
+.thought-capsule-header.expanded .thought-capsule-chevron {
+  transform: rotate(90deg);
+}
+
+.thought-capsule-content {
+  margin-top: 6px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.2);
+  border-left: 2px solid rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--vscode-descriptionForeground, #abb2bf);
+  font-family: var(--vscode-editor-font-family, Consolas, Monaco, "Courier New", monospace);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 400px;
+  overflow-y: auto;
+  transition: max-height 0.2s ease;
+}
+
+.thought-capsule-content.collapsed {
+  display: none;
+}
+
+/* Antigravity Completion Walkthrough Card */
+.walkthrough-card {
+  margin: 12px 0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  overflow: hidden;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.walkthrough-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-weight: 600;
+  font-size: 12.5px;
+  color: var(--vscode-foreground, #ffffff);
+}
+
+.walkthrough-icon {
+  display: flex;
+  align-items: center;
+  color: var(--vscode-descriptionForeground, #9da5b4);
+}
+
+.walkthrough-body {
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.walkthrough-file-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 11px;
+  background: rgba(255, 255, 255, 0.03);
+  cursor: pointer;
+  transition: background 0.12s;
+  color: var(--vscode-foreground, #e0e0e0);
+}
+
+.walkthrough-file-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.walkthrough-file-item .file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-badge {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+.file-badge.new {
+  background: rgba(52, 211, 153, 0.15);
+  color: #34d399;
+}
+.file-badge.edit {
+  background: rgba(96, 165, 250, 0.15);
+  color: #60a5fa;
+}
+
+.walkthrough-cmd-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground, #9da5b4);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.walkthrough-cmd-item .cmd-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cmd-badge {
+  margin-left: auto;
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+.cmd-badge.pass {
+  color: #34d399;
+  background: rgba(52, 211, 153, 0.1);
+}
+.cmd-badge.fail {
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.1);
+}
+
+.walkthrough-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  background: rgba(255, 255, 255, 0.02);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.walkthrough-stats {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground, #9da5b4);
+}
+
+.review-changes-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 4px;
+  font-size: 11.5px;
+  font-weight: 500;
+  background: var(--vscode-button-background, #0e639c);
+  color: var(--vscode-button-foreground, #ffffff);
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.review-changes-btn:hover {
+  background: var(--vscode-button-hoverBackground, #1177bb);
+}
+
+.vector-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+}

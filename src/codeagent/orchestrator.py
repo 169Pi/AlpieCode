@@ -211,13 +211,27 @@ class AgentOrchestrator:
                 else:
                     max_tokens = 2048 if is_offline else effective_max_tokens
 
-                resp = self.backend.chat_completion(
-                    messages=session.context.messages,
-                    tools=active_tools if active_tools else None,
-                    temperature=cfg.temperature,
-                    max_tokens=max_tokens,
-                    enable_thinking=enable_thinking,
-                )
+                if hasattr(self.backend, "chat_completion_stream") and not is_offline:
+                    resp = None
+                    for event_type, data in self.backend.chat_completion_stream(
+                        messages=session.context.messages,
+                        tools=active_tools if active_tools else None,
+                        temperature=cfg.temperature,
+                        max_tokens=max_tokens,
+                        enable_thinking=enable_thinking,
+                    ):
+                        if event_type == "done":
+                            resp = data
+                        else:
+                            yield AgentEvent(event_type, data)
+                else:
+                    resp = self.backend.chat_completion(
+                        messages=session.context.messages,
+                        tools=active_tools if active_tools else None,
+                        temperature=cfg.temperature,
+                        max_tokens=max_tokens,
+                        enable_thinking=enable_thinking,
+                    )
             except Exception as e:
                 # Online error -> fallback to local
                 if not is_offline and isinstance(self.backend, OpenAIBackend):
@@ -241,7 +255,7 @@ class AgentOrchestrator:
                     yield AgentEvent("error", {"error": str(e)})
                     return
 
-            if resp.reasoning:
+            if resp.reasoning and not (hasattr(self.backend, "chat_completion_stream") and not is_offline):
                 yield AgentEvent("thinking", {"content": resp.reasoning})
 
             session.context.add_assistant_response(resp)

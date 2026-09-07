@@ -244,6 +244,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
     let assistantBuf = "";
     this._modifiedFiles = [];
+    this._executedCommands = [];
 
     this._abortStream = streamChat(
       url,
@@ -286,6 +287,19 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         this._post({ action: "buildStatus", status: "complete", message: "Build completed" });
         this._abortStream = undefined;
 
+        // Emit Antigravity-style completion Walkthrough Card
+        const uniqueFiles = [...new Set(this._modifiedFiles)];
+        if (uniqueFiles.length > 0 || this._executedCommands.length > 0) {
+          this._post({
+            action: "walkthrough",
+            data: {
+              summary: "Changes completed for: " + task,
+              files: uniqueFiles,
+              commands: this._executedCommands
+            }
+          });
+        }
+
         // Auto-run generated code in sandbox terminal (only if no pending approval)
         if (this._modifiedFiles.length > 0 && !this._pendingChange) {
           this._sandboxRun(workdir);
@@ -302,6 +316,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
   /** Files modified during the current stream (for sandbox auto-run). */
   private _modifiedFiles: string[] = [];
+  private _executedCommands: Array<{ command: string; exitCode?: number }> = [];
 
   private async _handleToolCall(workdir: string, data: any) {
     const name = data.name;
@@ -592,6 +607,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     const disposable = vscode.tasks.onDidEndTaskProcess((e) => {
       if (e.execution === execution) {
         disposable.dispose();
+        this._executedCommands.push({ command: runCmd, exitCode: e.exitCode || 0 });
         if (e.exitCode !== 0) {
           // Smart dep detection: check for missing packages BEFORE auto-fix
           this._detectMissingDep(workdir, files, runCmd).then(dep => {
@@ -1009,8 +1025,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       case "insertCodeAtCursor":
         this._insertCodeAtCursor(m.code);
         break;
+            case "reviewChanges":
+        this._openReviewChanges();
+        break;
       case "openFile":
         this._openFileInEditor(m.path);
+        break;
+      case "insertCodeAtCursor":
+        this._insertCodeAtCursor(m.code);
         break;
       case "copyToClipboard":
         if (m.text) { vscode.env.clipboard.writeText(m.text); }
@@ -1028,6 +1050,35 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   }
 
 
+
+  /* ---- Editor & Source Control Integrations ---- */
+
+  private _openReviewChanges() {
+    vscode.commands.executeCommand("workbench.view.scm");
+    if (this._modifiedFiles.length > 0) {
+      this._openFileInEditor(this._modifiedFiles[0]);
+    }
+  }
+
+  private _openFileInEditor(filePath: string) {
+    if (!filePath) return;
+    const abs = path.isAbsolute(filePath) ? filePath : path.join(this._workdir(), filePath);
+    const local = this._toLocalPath(abs);
+    if (fs.existsSync(local)) {
+      vscode.workspace.openTextDocument(vscode.Uri.file(local)).then(doc => {
+        vscode.window.showTextDocument(doc, { preview: true });
+      });
+    }
+  }
+
+  private _insertCodeAtCursor(code: string) {
+    const editor = vscode.window.activeTextEditor;
+    if (editor && code) {
+      editor.edit(editBuilder => {
+        editBuilder.insert(editor.selection.active, code);
+      });
+    }
+  }
 
   /* ---- Live Building Log Descriptions ---- */
 
@@ -1425,8 +1476,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       <span id="status-text">Connecting\u2026</span>
     </div>
     <div id="header-right">
-      <span id="token-badge" class="token-badge" title="Generation speed and token usage">⚡ 0 tok/s · 📊 0</span>
-      <button id="history-btn" title="Chat History">\ud83d\udccb</button>
+      <span id="token-badge" class="token-badge" title="Generation speed and token usage"><span class="token-val">0 tok/s · 0 tok</span></span>
+      <button id="history-btn" title="Chat History"><svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M8 3.5a.5.5 0 0 0-1 0V9a.5.5 0 0 0 .252.434l3.5 2a.5.5 0 0 0 .496-.868L8 8.71V3.5z"/><path d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16zm7-8A7 7 0 1 1 1 8a7 7 0 0 1 14 0z"/></svg></button>
       <button id="new-chat-btn" title="New Chat">\uff0b</button>
     </div>
   </div>
@@ -1438,13 +1489,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     <div id="history-list"></div>
   </div>
   <div id="live-build-bar" class="live-build-bar hidden">
-    <span class="live-build-spinner">🔨</span>
+    <span class="live-build-spinner"><svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="2" fill="none" stroke-dasharray="28" stroke-dashoffset="10"/></svg></span>
     <span id="live-build-text" class="live-build-text">Building...</span>
   </div>
   <button id="scroll-bottom-btn" class="scroll-bottom-btn hidden" title="Scroll to bottom">↓</button>
   <div id="chat-messages"></div>
   <div id="active-context-bar" class="active-context-bar hidden">
-    <span class="ac-icon">📄</span>
+    <span class="ac-icon"><svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M4 0h5.5v1H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V6.5h1V14a3 3 0 0 1-3 3H4a3 3 0 0 1-3-3V3a3 3 0 0 1 3-3z"/><path d="M9.5 0v4.5A1.5 1.5 0 0 0 11 6h4.5l-6-6z"/></svg></span>
     <span id="ac-filename" class="ac-filename">file</span>
     <button id="ac-remove-btn" class="ac-remove-btn" title="Remove context">✕</button>
   </div>
@@ -1462,20 +1513,20 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     <div id="input-options">
       <div id="reasoning-selector" class="reasoning-selector">
         <button id="reasoning-btn" class="reasoning-btn" type="button" title="Model Thinking Mode">
-          <span id="reasoning-icon">💭</span>
+          <span id="reasoning-icon"><svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 0 0-7 7c0 2.38 1.19 4.47 3 5.74V15a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-1.26c1.81-1.27 3-3.36 3-5.74a7 7 0 0 0-7-7zm2 13H6v-1h4v1zm1.75-2.82l-.46.32H4.71l-.46-.32A5.98 5.98 0 0 1 2 8a6 6 0 1 1 12 0c0 1.95-.94 3.7-2.25 4.88z"/></svg></span>
           <span id="reasoning-label">Thinking</span>
           <span class="reasoning-arrow">⌃</span>
         </button>
         <div id="reasoning-menu" class="reasoning-menu hidden">
           <div class="reasoning-option active" data-level="thinking">
-            <span class="ro-icon">💭</span>
+            <span class="ro-icon"><svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 0 0-7 7c0 2.38 1.19 4.47 3 5.74V15a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-1.26c1.81-1.27 3-3.36 3-5.74a7 7 0 0 0-7-7zm2 13H6v-1h4v1zm1.75-2.82l-.46.32H4.71l-.46-.32A5.98 5.98 0 0 1 2 8a6 6 0 1 1 12 0c0 1.95-.94 3.7-2.25 4.88z"/></svg></span>
             <div class="ro-info">
               <div class="ro-title">Thinking Mode</div>
               <div class="ro-desc">Deep reasoning trace (collapsible)</div>
             </div>
           </div>
           <div class="reasoning-option" data-level="no-thinking">
-            <span class="ro-icon">⚡</span>
+            <span class="ro-icon"><svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M11.251.068a.5.5 0 0 1 .42.58L10.077 6H14.5a.5.5 0 0 1 .372.832l-9.5 10.5a.5.5 0 0 1-.844-.512L5.923 10H1.5a.5.5 0 0 1-.372-.832l9.5-10.5a.5.5 0 0 1 .123-.1z"/></svg></span>
             <div class="ro-info">
               <div class="ro-title">No-Thinking Mode</div>
               <div class="ro-desc">Direct execution without reasoning trace</div>
@@ -1483,7 +1534,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           </div>
         </div>
       </div>
-      <button id="attach-img-btn" title="Attach Image / Screenshot">\ud83d\udcce Image</button>
+      <button id="attach-img-btn" title="Attach Image / Screenshot"><svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M4.502 9a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z"/><path d="M14.002 13a2 2 0 0 1-2 2h-10a2 2 0 0 1-2-2V5A2 2 0 0 1 2 3a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v8a2 2 0 0 1-1.998 2zM14 2H4a1 1 0 0 0-1 1h9.002a2 2 0 0 1 2 2v7A1 1 0 0 0 15 11V3a1 1 0 0 0-1-1zM2.002 4a1 1 0 0 0-1 1v8l2.646-2.354a.5.5 0 0 1 .63-.062l2.66 1.773 3.71-3.71a.5.5 0 0 1 .577-.094l1.777 1.947V5a1 1 0 0 0-1-1h-10z"/></svg> Image</button>
     </div>
     <div id="input-row">
       <textarea id="user-input" placeholder="Ask AlpieCode anything... (type / for commands)" rows="1"></textarea>
