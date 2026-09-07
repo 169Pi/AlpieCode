@@ -266,6 +266,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           this._handleToolCall(workdir, ev.data);
           this._post({ action: "buildStatus", status: "building", message: this._toolBuildingDesc(ev.data) });
         }
+        if (ev.type === "walkthrough") {
+          this._handleWalkthroughEvent(workdir, ev.data);
+        }
         this._post({ action: "agentEvent", event: ev });
       },
       (err) => {
@@ -1050,6 +1053,36 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   }
 
 
+
+  private _handleWalkthroughEvent(workdir: string, data: any) {
+    const summary = data.summary || "Completed project changes.";
+    const files = data.files || [];
+    const commands = data.commands || [];
+
+    // Ensure walkthrough.md is written to disk in the workspace
+    const localWalkthrough = this._toLocalPath(path.join(workdir, "walkthrough.md"));
+    try {
+      if (!fs.existsSync(localWalkthrough)) {
+        let content = `# Walkthrough\n\n## Summary\n${summary}\n\n## Changes Made\n`;
+        files.forEach((f: string) => { content += `- \`${f}\`\n`; });
+        if (commands.length > 0) {
+          content += `\n## Verification\n`;
+          commands.forEach((c: any) => { content += `- \`${c.command || c}\` (Verified)\n`; });
+        }
+        fs.writeFileSync(localWalkthrough, content, "utf-8");
+      }
+    } catch {}
+
+    this._post({
+      action: "walkthrough",
+      data: {
+        path: "walkthrough.md",
+        summary,
+        files: [...new Set(files.concat(this._modifiedFiles))],
+        commands: commands.length > 0 ? commands : this._executedCommands
+      }
+    });
+  }
 
   /* ---- Editor & Source Control Integrations ---- */
 

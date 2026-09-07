@@ -155,6 +155,18 @@ class OpenAIBackend:
                         if after.strip():
                             full_content.append(after)
                             yield ("token", {"delta": after})
+                    elif "DONE:" in text:
+                        # Model output DONE: directly inside thinking without </think> tag
+                        before, after = text.split("DONE:", 1)
+                        if before:
+                            full_reasoning.append(before)
+                            yield ("thinking_delta", {"delta": before})
+                        in_think = False
+                        elapsed = time.time() - start_time
+                        yield ("thinking_end", {"duration": round(elapsed, 1), "content": "".join(full_reasoning).strip()})
+                        done_chunk = "DONE:" + after
+                        full_content.append(done_chunk)
+                        yield ("token", {"delta": done_chunk})
                     else:
                         clean_text = text.replace("<think>", "")
                         full_reasoning.append(clean_text)
@@ -179,8 +191,29 @@ class OpenAIBackend:
                     args = {}
                 tool_calls.append(ToolCall(id=item["id"], name=item["name"], arguments=args))
 
-        final_content = "".join(full_content).strip()
-        final_reasoning = "".join(full_reasoning).strip() if full_reasoning else None
+        final_content_str = "".join(full_content).strip()
+        final_reasoning_str = "".join(full_reasoning).strip()
+
+        # CRITICAL RECOVERY: If content is empty but reasoning has text,
+        # extract any DONE: or answer that was mistakenly trapped in reasoning!
+        if not final_content_str and final_reasoning_str:
+            if "DONE:" in final_reasoning_str:
+                idx = final_reasoning_str.find("DONE:")
+                final_content_str = final_reasoning_str[idx:].strip()
+                final_reasoning_str = final_reasoning_str[:idx].strip()
+                yield ("token", {"delta": final_content_str})
+            elif "</think>" in final_reasoning_str:
+                parts = final_reasoning_str.split("</think>", 1)
+                final_reasoning_str = parts[0].strip()
+                final_content_str = parts[1].strip()
+                yield ("token", {"delta": final_content_str})
+            elif any(m in final_reasoning_str for m in ["The codebase is complete", "All JavaScript files", "I have implemented", "Verified the", "All files"]):
+                final_content_str = final_reasoning_str
+                final_reasoning_str = ""
+                yield ("token", {"delta": final_content_str})
+
+        final_content = final_content_str
+        final_reasoning = final_reasoning_str if final_reasoning_str else None
 
         yield ("done", ChatResponse(
             content=final_content,

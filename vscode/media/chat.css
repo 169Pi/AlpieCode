@@ -961,13 +961,15 @@ body {
 
 /* ---- Unified Tool Badge Row (Cursor / Claude Code Style) ---- */
 .tool-badge-row {
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid var(--vscode-panel-border, rgba(255, 255, 255, 0.08));
-  margin: 4px 0;
+  border-radius: 4px;
+  background: transparent;
+  border: none;
+  border-left: 2px solid rgba(255, 255, 255, 0.12);
+  margin: 2px 0;
+  padding: 2px 8px;
   overflow: hidden;
-  font-size: 11.5px;
-  transition: background 0.15s, border-color 0.15s;
+  font-size: 11px;
+  transition: background 0.12s, border-color 0.12s;
 }
 .tool-badge-row:hover {
   background: rgba(255, 255, 255, 0.06);
@@ -1681,4 +1683,112 @@ body {
   align-items: center;
   justify-content: center;
   vertical-align: middle;
+}
+
+/* Hide empty message bubbles and eliminate stray border lines */
+.msg:empty {
+  display: none !important;
+}
+.tool-badge-row:empty {
+  display: none !important;
+}
+
+
+/* Antigravity Artifact Card (walkthrough.md) */
+.antigravity-artifact-card {
+  margin: 10px 0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  overflow: hidden;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.artifact-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.artifact-card-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.artifact-doc-icon {
+  display: flex;
+  align-items: center;
+  color: #60a5fa;
+}
+
+.artifact-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.artifact-title {
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--vscode-foreground, #ffffff);
+  font-family: var(--vscode-editor-font-family, monospace);
+}
+
+.artifact-desc {
+  font-size: 10.5px;
+  color: var(--vscode-descriptionForeground, #9da5b4);
+}
+
+.artifact-open-btn {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--vscode-foreground, #ffffff);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  padding: 3px 10px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.artifact-open-btn:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.artifact-card-body {
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.walkthrough-section-title {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--vscode-descriptionForeground, #9da5b4);
+  margin-top: 4px;
+}
+
+.walkthrough-files-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.artifact-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.02);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.artifact-stats {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground, #9da5b4);
 }

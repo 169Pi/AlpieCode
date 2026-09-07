@@ -996,7 +996,7 @@
     scrollToBottom();
   }
 
-  // ---- Antigravity Completion Walkthrough Card ----
+  // ---- Antigravity Artifact Card for walkthrough.md ----
   function renderWalkthroughCard(data) {
     if (!data) return;
     var existing = document.getElementById("walkthrough-card");
@@ -1004,8 +1004,9 @@
 
     var card = document.createElement("div");
     card.id = "walkthrough-card";
-    card.className = "walkthrough-card";
+    card.className = "antigravity-artifact-card";
 
+    var filePath = data.path || "walkthrough.md";
     var files = data.files || [];
     var commands = data.commands || [];
 
@@ -1013,16 +1014,16 @@
     files.forEach(function(f) {
       var safeF = escapeHtml(f);
       filesHtml +=
-        '<div class="walkthrough-file-item" data-path="' + safeF + '" title="Click to open file in editor">' +
-          '<span class="file-badge edit">EDIT</span>' +
+        '<div class="walkthrough-file-item" data-path="' + safeF + '" title="Click to open ' + safeF + '">' +
+          '<span class="file-badge edit">' + (safeF.endsWith(".md") ? "DOC" : "EDIT") + '</span>' +
           '<span class="file-name">' + safeF + '</span>' +
         '</div>';
     });
 
     var cmdsHtml = "";
     commands.forEach(function(c) {
-      var cmdStr = escapeHtml(c.command || "");
-      var isPass = (c.exitCode === 0 || c.exitCode === undefined);
+      var cmdStr = escapeHtml(c.command || c.cmd || "");
+      var isPass = (c.exit_code === 0 || c.exitCode === 0 || c.exitCode === undefined);
       cmdsHtml +=
         '<div class="walkthrough-cmd-item">' +
           '<span class="vector-icon">' + ICONS.terminal + '</span>' +
@@ -1032,18 +1033,24 @@
     });
 
     card.innerHTML =
-      '<div class="walkthrough-header">' +
-        '<span class="walkthrough-icon">' + ICONS.document + '</span>' +
-        '<span>Walkthrough</span>' +
+      '<div class="artifact-card-header">' +
+        '<div class="artifact-card-left">' +
+          '<span class="artifact-doc-icon">' + ICONS.document + '</span>' +
+          '<div class="artifact-info">' +
+            '<span class="artifact-title">walkthrough.md</span>' +
+            '<span class="artifact-desc">Project Walkthrough &bull; Changes &amp; Verification</span>' +
+          '</div>' +
+        '</div>' +
+        '<button class="artifact-open-btn" id="open-walkthrough-btn" type="button" title="Open walkthrough.md in editor">Open</button>' +
       '</div>' +
-      '<div class="walkthrough-body">' +
-        (filesHtml ? '<div class="walkthrough-files-list">' + filesHtml + '</div>' : '') +
-        (cmdsHtml ? '<div class="walkthrough-cmds-list">' + cmdsHtml + '</div>' : '') +
+      '<div class="artifact-card-body">' +
+        (filesHtml ? '<div class="walkthrough-section-title">Files Created / Modified</div><div class="walkthrough-files-grid">' + filesHtml + '</div>' : '') +
+        (cmdsHtml ? '<div class="walkthrough-section-title">Verification</div><div class="walkthrough-cmds-list">' + cmdsHtml + '</div>' : '') +
       '</div>' +
-      '<div class="walkthrough-footer">' +
-        '<div class="walkthrough-stats">' +
-          '<span class="vector-icon">' + ICONS.document + '</span>' +
+      '<div class="artifact-card-footer">' +
+        '<div class="artifact-stats">' +
           '<span>' + files.length + ' file' + (files.length === 1 ? '' : 's') + ' touched</span>' +
+          (commands.length > 0 ? '<span> &bull; ' + commands.length + ' command' + (commands.length === 1 ? '' : 's') + '</span>' : '') +
         '</div>' +
         '<button class="review-changes-btn" id="review-changes-btn" type="button" title="View native Git diff of changes">' +
           '<span class="vector-icon">' + ICONS.diff + '</span>' +
@@ -1054,12 +1061,18 @@
     // Click file to open in editor
     card.querySelectorAll(".walkthrough-file-item").forEach(function(item) {
       item.addEventListener("click", function() {
-        var filePath = item.getAttribute("data-path");
-        if (filePath) {
-          vscode.postMessage({ action: "openFile", path: filePath });
-        }
+        var p = item.getAttribute("data-path");
+        if (p) vscode.postMessage({ action: "openFile", path: p });
       });
     });
+
+    // Open walkthrough.md button
+    var openBtn = card.querySelector("#open-walkthrough-btn");
+    if (openBtn) {
+      openBtn.addEventListener("click", function() {
+        vscode.postMessage({ action: "openFile", path: filePath });
+      });
+    }
 
     // Review changes action button
     var reviewBtn = card.querySelector("#review-changes-btn");
@@ -1146,13 +1159,14 @@
         lastToolCard.drawer.textContent = display;
       }
       lastToolCard = null;
-    } else {
+    } else if (isError) {
+      // Only display fallback result if it is an actual error
       var fallback = document.createElement("div");
       fallback.className = "tool-badge-row";
       fallback.innerHTML =
         '<div class="tool-badge-header">' +
-          '<span class="tool-badge-name">result</span> ' +
-          '<span class="tool-badge-status ' + (isError ? 'error' : 'success') + '">' + (isError ? '✗' : '✓') + '</span>' +
+          '<span class="tool-badge-name">command</span> ' +
+          '<span class="tool-badge-status error">✗</span>' +
         '</div>' +
         '<div class="tool-badge-drawer">' + escapeHtml(text.substring(0, 400)) + '</div>';
       messagesEl.appendChild(fallback);
@@ -1178,14 +1192,21 @@
   }
 
   function finalizeAssistantMessage() {
-    if (currentAssistantEl && currentAssistantText) {
-      var footer = "";
-      if (lastTokenStats.tokenCount > 0) {
-        var spd = lastTokenStats.tokPerSec > 0 ? lastTokenStats.tokPerSec + " tok/s" : "";
-        var tok = lastTokenStats.tokenCount + " tokens";
-        footer = '<div class="msg-token-footer">⚡ ' + (spd ? spd + ' · ' : '') + '📊 ' + tok + '</div>';
+    if (currentAssistantEl) {
+      var dot = currentAssistantEl.querySelector(".streaming-dot");
+      if (dot) dot.remove();
+
+      if (!currentAssistantText || !currentAssistantText.trim()) {
+        currentAssistantEl.remove();
+      } else {
+        var footer = "";
+        if (lastTokenStats.tokenCount > 0) {
+          var spd = lastTokenStats.tokPerSec > 0 ? lastTokenStats.tokPerSec + " tok/s" : "";
+          var tok = lastTokenStats.tokenCount + " tokens";
+          footer = '<div class="msg-token-footer"><span class="token-icon">⚡</span> ' + (spd ? spd + ' · ' : '') + tok + '</div>';
+        }
+        currentAssistantEl.innerHTML = renderMarkdown(currentAssistantText) + footer;
       }
-      currentAssistantEl.innerHTML = renderMarkdown(currentAssistantText) + footer;
     }
     currentAssistantEl = null;
     currentAssistantText = "";

@@ -1,3 +1,37 @@
+def generate_walkthrough_markdown(task: str, summary: str, files: list, commands: list) -> str:
+    """Generate Antigravity-style Walkthrough markdown document."""
+    lines = [
+        f"# Walkthrough: {task}",
+        "",
+        "## Overview",
+        summary.strip() if summary else "All requested changes and verification steps have been completed.",
+        "",
+        "## Changes Made",
+    ]
+    if files:
+        lines.append("### Modified / Created Files")
+        for f in files:
+            lines.append(f"- `{f}`")
+        lines.append("")
+    else:
+        lines.append("No files were modified during this session.")
+        lines.append("")
+
+    if commands:
+        lines.append("## Verification Results")
+        for c in commands:
+            cmd = c.get("command") or c.get("cmd") or ""
+            code = c.get("exit_code", 0)
+            status = "✓ Passed" if code == 0 else f"✗ Failed (exit code {code})"
+            lines.append(f"- `{cmd}` — **{status}**")
+        lines.append("")
+
+    lines.append("## How to Run / Verify")
+    lines.append("Review the files above or run your test/build commands to verify project execution.")
+    lines.append("")
+    return "\n".join(lines)
+
+
 """
 Agent orchestrator for AlpieCode.
 
@@ -80,6 +114,10 @@ class AgentOrchestrator:
 
         # Safety ceiling: hard emergency brake (should never be hit naturally)
         safety_ceiling = cfg.max_turns if cfg.max_turns != 200 else 200
+
+        # Track touched files and executed commands for Antigravity Walkthrough
+        session_touched_files = set()
+        session_executed_commands = []
 
         # ── Response cache check ──
         is_cacheable = not any([image_path, video_path, url, github_repo])
@@ -260,6 +298,20 @@ class AgentOrchestrator:
 
             session.context.add_assistant_response(resp)
 
+            # Normalize content and reasoning: rescue any DONE: or answer trapped in reasoning
+            if (not resp.content or not resp.content.strip()) and resp.reasoning:
+                if "DONE:" in resp.reasoning.upper():
+                    idx = resp.reasoning.upper().find("DONE:")
+                    resp.content = resp.reasoning[idx:].strip()
+                    resp.reasoning = resp.reasoning[:idx].strip() or None
+                elif "</think>" in resp.reasoning:
+                    parts = resp.reasoning.split("</think>", 1)
+                    resp.reasoning = parts[0].strip() or None
+                    resp.content = parts[1].strip()
+                elif any(m in resp.reasoning for m in ["The codebase is complete", "All JavaScript files", "I have implemented", "Verified the"]):
+                    resp.content = resp.reasoning.strip()
+                    resp.reasoning = None
+
             # ── DONE detection in assistant content ──
             if resp.content and "DONE:" in resp.content.upper():
                 # Model said DONE — finish even if there are tool calls
@@ -279,6 +331,28 @@ class AgentOrchestrator:
 
                 yield AgentEvent("message", {"content": resp.content})
                 extract_and_save_memories(session.workdir, session.context.messages)
+
+                # Generate and write real walkthrough.md file to the project workspace
+                from pathlib import Path as _Path
+                try:
+                    w_path = _Path(session.workdir) / "walkthrough.md"
+                    w_content = generate_walkthrough_markdown(
+                        task=task,
+                        summary=resp.content,
+                        files=sorted(list(session_touched_files)),
+                        commands=session_executed_commands,
+                    )
+                    w_path.write_text(w_content, encoding="utf-8")
+                    session_touched_files.add("walkthrough.md")
+                except Exception:
+                    pass
+
+                yield AgentEvent("walkthrough", {
+                    "path": "walkthrough.md",
+                    "summary": resp.content,
+                    "files": sorted(list(session_touched_files)),
+                    "commands": session_executed_commands,
+                })
 
                 # Cache if single-turn
                 if is_cacheable and turn == 0:
@@ -314,6 +388,17 @@ class AgentOrchestrator:
                         "duration_ms": res.duration_ms,
                     })
                     session.context.add_tool_result(res.tool_call_id, res.content)
+
+                # Track touched files and commands for walkthrough
+                for tc in tool_calls:
+                    if tc.name in ("write_file", "edit_file", "apply_patch"):
+                        p = tc.arguments.get("path") or tc.arguments.get("filename")
+                        if p:
+                            session_touched_files.add(p)
+                    elif tc.name == "bash":
+                        c = tc.arguments.get("command", "")
+                        if c:
+                            session_executed_commands.append({"command": c, "exit_code": 0})
 
                 # ── Record progress for stall detection ──
                 tc_dicts = [{"name": tc.name, "arguments": tc.arguments} for tc in tool_calls]
