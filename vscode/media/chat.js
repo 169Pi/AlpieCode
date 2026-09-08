@@ -1083,9 +1083,7 @@
     if (unifiedWorkContent) {
       unifiedWorkContent.classList.remove("collapsed");
       if (unifiedWorkContent.textContent.trim()) {
-        unifiedWorkContent.textContent += "
-
-" + text;
+        unifiedWorkContent.textContent += "\n\n" + text;
       } else {
         unifiedWorkContent.textContent = text;
       }
