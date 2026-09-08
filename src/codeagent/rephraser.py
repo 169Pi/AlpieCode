@@ -104,9 +104,21 @@ class PromptRephraser:
             return task
 
         try:
+            # Inject project context if available so rephrased spec is project-aware
+            project_hint = ""
+            if task_context:
+                _fw = ", ".join(getattr(task_context, "frameworks", []) or []) or "none"
+                _pt = getattr(task_context, "project_type", "unknown")
+                _fc = getattr(task_context, "file_count", 0)
+                _deps = ", ".join((getattr(task_context, "dependencies", []) or [])[:6]) or "none"
+                project_hint = (
+                    f"\nProject Context: type={_pt}, frameworks={_fw}, "
+                    f"files={_fc}, key_deps={_deps}"
+                )
+
             messages = [
                 {"role": "system", "content": self.system_prompt},
-                {"role": "user", "content": f"User Task:\n{task.strip()}"},
+                {"role": "user", "content": f"User Task:\n{task.strip()}{project_hint}"},
             ]
 
             # Invoke backend with enable_thinking=False for ultra-fast, deterministic response

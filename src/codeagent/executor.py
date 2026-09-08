@@ -84,6 +84,68 @@ def parse_text_tool_calls(text: str) -> List[dict]:
     return tool_calls
 
 
+
+def _parse_error_hint(stderr: str, stdout: str) -> str:
+    """Parse common error patterns from bash output and return a targeted hint."""
+    combined = (stderr + " " + stdout).strip()
+    if not combined:
+        return ""
+
+    hints = []
+
+    # Python errors
+    if "ModuleNotFoundError" in combined or "ImportError" in combined:
+        mod_match = re.search(r"(?:No module named|cannot import name)\s+['\"]?([a-zA-Z0-9_\.\-]+)['\"]?", combined)
+        mod = mod_match.group(1) if mod_match else ""
+        target = f"'{mod}' " if mod else ""
+        hints.append(
+            f"Hint: Module {target}not found. Check if it is installed (pip list | grep {mod or 'package'}) "
+            "and that the import path matches the project structure. If using a venv, ensure it is activated."
+        )
+    elif "SyntaxError" in combined:
+        # Extract line number if present
+        line_match = re.search(r"line (\d+)", combined)
+        line_ref = f" at line {line_match.group(1)}" if line_match else ""
+        hints.append(
+            f"Hint: Python SyntaxError{line_ref}. Use read_file to inspect the exact lines "
+            "around the error before attempting a fix. Do NOT guess -- read first, fix once."
+        )
+    elif "FileNotFoundError" in combined or "No such file or directory" in combined:
+        hints.append(
+            "Hint: File or directory not found. Use list_files to verify the correct path "
+            "before retrying. The file may be in a different directory than expected."
+        )
+    elif "TypeError" in combined or "AttributeError" in combined:
+        hints.append(
+            "Hint: Type or attribute error. Use read_file to check the function/class definition "
+            "and verify the correct argument types and available attributes."
+        )
+    elif "NameError" in combined:
+        hints.append(
+            "Hint: NameError -- a variable or function is used before definition. "
+            "Read the file to check for typos, missing imports, or incorrect scope."
+        )
+    elif "IndentationError" in combined or "TabError" in combined:
+        hints.append(
+            "Hint: Indentation error. Read the full file with read_file to see the actual "
+            "whitespace. Do NOT guess indentation levels -- verify from the source."
+        )
+    elif "Permission denied" in combined:
+        hints.append(
+            "Hint: Permission denied. Check file permissions or if the path is correct. "
+            "You may need to use chmod or run with appropriate privileges."
+        )
+    elif "command not found" in combined:
+        cmd_match = combined.split("command not found")[0].strip().split()
+        cmd = cmd_match[-1] if cmd_match else "unknown"
+        hints.append(
+            f"Hint: Command '{cmd}' not found. It may not be installed or not in PATH. "
+            "Check available commands or install the required package."
+        )
+
+    return "\n".join(hints)
+
+
 class ToolExecutor:
     """Executes tool calls for a workspace."""
 
@@ -239,6 +301,20 @@ class ToolExecutor:
                         f"You have already executed '{tc.name}' with these exact parameters {repeat_count} times in a row. "
                         "All checks have passed. Do NOT run this tool again. Output your final summary starting with: DONE: <summary>."
                     )
+
+                # Smart error hint injection for failed bash commands
+                if tc.name == "bash" and '"exit_code"' in res_str:
+                    try:
+                        _res_parsed = json.loads(res_str.split("\n", 1)[-1] if res_str.startswith("\u26a0") else res_str)
+                        if _res_parsed.get("exit_code", 0) != 0:
+                            _hint = _parse_error_hint(
+                                _res_parsed.get("stderr", ""),
+                                _res_parsed.get("stdout", ""),
+                            )
+                            if _hint:
+                                res_str += "\n\n" + _hint
+                    except Exception:
+                        pass
 
                 # Compilation failure recovery hint
                 if tc.name == "bash":

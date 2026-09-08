@@ -442,6 +442,15 @@ GOAL_DRIVEN_RULES = """\
 - No Thrashing: NEVER delete a file (e.g. `rm <file>`) immediately after creating it to start over. Use `edit_file` to modify what needs fixing.
 - Immediate Completion: As soon as your code is written and verified, output `DONE: <summary>`. Do NOT linger or rerun commands that already passed.
 - Targeted Editing: If `edit_file` fails, use `read_file` to inspect the exact lines and whitespace before attempting another edit.
+
+## Mandatory Verification Before Completion
+- Before outputting DONE, you MUST verify your work:
+  - For Python: Run the script or run `python3 -c "import ast; ast.parse(open('<file>').read())"` for syntax check
+  - For JavaScript/TypeScript: Run `node --check <file>` for syntax check
+  - For any executable code: Run it at least once with bash
+  - If tests exist in the project: Run the test suite
+- NEVER say DONE if your last bash command returned a non-zero exit code
+- If you created or modified files but haven't run ANY verification command, you must verify before finishing
 """
 
 INTENT_MODIFY = """\

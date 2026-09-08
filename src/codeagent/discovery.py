@@ -521,6 +521,97 @@ COMPLEXITY_CONFIG = {
 }
 
 
+# -- Pre-Read Context Injection ---------------------------------------------
+
+def gather_relevant_context(
+    task: str,
+    workdir: Path,
+    task_context: "TaskContext",
+    max_chars: int = 16000,
+) -> Optional[str]:
+    """Gather relevant project files and inject them as pre-loaded context.
+
+    Reads key files based on task intent so the agent doesn't code blindly.
+    Runs fast (filesystem only, no LLM calls). Returns None if nothing useful found.
+
+    Budget: ~4000 tokens = 16000 chars. Prioritises config > entry points > task-mentioned files.
+    """
+    if not task_context or getattr(task_context, "project_type", "") == "empty" or getattr(task_context, "file_count", 0) == 0:
+        return None
+
+    # Skip for pure Q&A -- no code context needed
+    if getattr(task_context, "intent", "") in ("qa",):
+        return None
+
+    sections: List[str] = []
+    chars_used = 0
+
+    def _add_file(rel_path: str, label: str = "") -> bool:
+        """Read a file and add it to sections. Returns True if added."""
+        nonlocal chars_used
+        fp = workdir / rel_path
+        if not fp.is_file():
+            return False
+        try:
+            content = fp.read_text(errors="replace")
+        except Exception:
+            return False
+        if not content.strip():
+            return False
+        # Truncate individual files at 3000 chars to leave room for others
+        if len(content) > 3000:
+            content = content[:3000] + f"\n... (truncated, {len(content)} chars total)"
+        if chars_used + len(content) > max_chars:
+            return False
+        tag = label or rel_path
+        sections.append(f"### {tag}\n```\n{content}\n```")
+        chars_used += len(content) + 50  # overhead for markdown
+        return True
+
+    # -- Priority 1: Config files (always useful) --
+    config_files = [
+        ("pyproject.toml", "pyproject.toml (project config)"),
+        ("package.json", "package.json (project config)"),
+        ("requirements.txt", "requirements.txt (dependencies)"),
+        ("Cargo.toml", "Cargo.toml (project config)"),
+        ("go.mod", "go.mod (project config)"),
+    ]
+    for rel, label in config_files:
+        _add_file(rel, label)
+
+    # -- Priority 2: Entry points (helps understand project structure) --
+    if task_context.intent in ("modify", "debug", "create"):
+        for ep in task_context.entry_points[:3]:
+            _add_file(ep, f"{ep} (entry point)")
+
+    # -- Priority 3: Files mentioned in the task (fuzzy match) --
+    task_lower = task.lower()
+    try:
+        all_files = []
+        for p in workdir.rglob("*"):
+            if p.is_file() and not any(
+                skip in str(p) for skip in [
+                    ".git/", "__pycache__", "node_modules", ".venv",
+                    ".egg-info", "dist/", "build/", ".mypy_cache",
+                ]
+            ):
+                all_files.append(str(p.relative_to(workdir)))
+        # Match filenames or stems mentioned in the task
+        for rel in all_files:
+            fname = Path(rel).stem.lower()
+            if len(fname) > 2 and fname in task_lower:
+                _add_file(rel, f"{rel} (mentioned in task)")
+                if chars_used > max_chars * 0.8:
+                    break
+    except Exception:
+        pass
+
+    if not sections:
+        return None
+
+    return "## Pre-loaded Project Context\n" + "\n\n".join(sections)
+
+
 # -- Main Entry Point -------------------------------------------------------
 
 def build_task_context(task: str, workdir: Path) -> TaskContext:

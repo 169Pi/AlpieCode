@@ -37,6 +37,10 @@ def validate_code_syntax(file_path: str, content: str) -> Tuple[bool, Optional[s
     if ext == ".py":
         try:
             ast.parse(content, filename=file_path)
+            # Syntax OK -- run semantic checks
+            sem_ok, sem_err = check_python_semantics(content, file_path)
+            if not sem_ok:
+                return False, sem_err
             return True, None
         except SyntaxError as e:
             line = e.lineno or 0
@@ -90,6 +94,68 @@ def validate_code_syntax(file_path: str, content: str) -> Tuple[bool, Optional[s
         if not is_balanced:
             return False, f"Syntax issue in '{file_path}': {balance_err}"
         return True, None
+
+    return True, None
+
+
+def check_python_semantics(content: str, file_path: str) -> Tuple[bool, Optional[str]]:
+    """Lightweight semantic checks for Python files using AST.
+
+    Catches common first-attempt errors that pass syntax validation but
+    would fail at runtime. Runs in < 10ms.
+    """
+    try:
+        tree = ast.parse(content, filename=file_path)
+    except SyntaxError:
+        return True, None  # Syntax errors are caught elsewhere
+
+    warnings = []
+
+    # 1. Detect duplicate function/class definitions at module level
+    seen_names = {}
+    for node in ast.iter_child_nodes(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            name = node.name
+            if name in seen_names:
+                warnings.append(
+                    f"Duplicate definition of '{name}' at line {node.lineno} "
+                    f"(first defined at line {seen_names[name]})"
+                )
+            else:
+                seen_names[name] = node.lineno
+
+    # 2. Detect stub-only functions (body is just `pass` or `...`)
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            body = node.body
+            if len(body) == 1:
+                stmt = body[0]
+                is_pass = isinstance(stmt, ast.Pass)
+                is_ellipsis = (
+                    isinstance(stmt, ast.Expr)
+                    and isinstance(stmt.value, ast.Constant)
+                    and stmt.value.value is ...
+                )
+                is_docstring_only = (
+                    isinstance(stmt, ast.Expr)
+                    and isinstance(stmt.value, ast.Constant)
+                    and isinstance(stmt.value.value, str)
+                )
+                # Skip __init__ with just pass (common pattern)
+                if node.name == "__init__":
+                    continue
+                if is_pass or is_ellipsis:
+                    warnings.append(
+                        f"Function '{node.name}' at line {node.lineno} is a stub "
+                        f"(body is only 'pass' or '...'). Implement the actual logic."
+                    )
+
+    if warnings:
+        return False, (
+            f"Semantic warnings in '{file_path}':\n"
+            + "\n".join(f"  - {w}" for w in warnings)
+            + "\nPlease fix these issues before writing the file."
+        )
 
     return True, None
 

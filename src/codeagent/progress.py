@@ -128,8 +128,11 @@ class ProgressMonitor:
 
         recent = self.history[-3:] if len(self.history) >= 3 else self.history
         deleted = set()
+        last_error_text = ""
         for snap in recent:
             deleted.update(snap.files_deleted)
+            if snap.errors:
+                last_error_text = snap.errors[-1][:200]
 
         created_names = {Path(f).name for f in self.all_files_created}
         thrashing = deleted & created_names
@@ -143,18 +146,23 @@ class ProgressMonitor:
             )
 
         if all(snap.errors or (snap.bash_exit_codes and 0 not in snap.bash_exit_codes) for snap in recent):
+            err_msg = f"\nLast error encountered: {last_error_text}\n" if last_error_text else ""
             return (
                 "[SYSTEM - PROGRESS MONITOR] You have encountered errors for 3 consecutive turns. "
-                "STOP retrying the same approach. Instead:\n"
+                f"STOP retrying the same approach.{err_msg} Instead:\n"
                 "1. Use read_file to examine the FULL current state of the file(s) you\'re editing\n"
                 "2. Identify the root cause of the error (not the symptom)\n"
                 "3. Make ONE comprehensive fix that addresses all issues\n"
                 "If the task approach is fundamentally wrong, start with a simpler design."
             )
 
+        error_context = ""
+        if last_error_text:
+            error_context = f"\nLast error encountered: {last_error_text}\n"
         return (
             "[SYSTEM - PROGRESS MONITOR] No measurable progress detected for 3 turns. "
-            "You may be stuck in a loop. Either:\n"
+            f"You may be stuck in a loop.{error_context}"
+            "Either:\n"
             "1. Complete your current work and output DONE: <summary>\n"
             "2. Try a completely different approach to the problem\n"
             "3. If the code is written and working, verify with bash and finish."

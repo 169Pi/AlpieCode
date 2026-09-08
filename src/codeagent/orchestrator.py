@@ -48,7 +48,7 @@ from .backends.openai_backend import OpenAIBackend
 from .cache import get_cache
 from .config import Config, is_server_reachable
 from .memory import extract_and_save_memories
-from .discovery import build_task_context, COMPLEXITY_CONFIG
+from .discovery import build_task_context, gather_relevant_context, COMPLEXITY_CONFIG
 from .progress import ProgressMonitor
 from .rephraser import PromptRephraser
 from .prompt import PromptBuilder, classify_task
@@ -174,8 +174,20 @@ class AgentOrchestrator:
             "rephrased": rephrased_task,
         })
 
+        # ── Phase 0.7: Pre-Read Context Injection ──
+        pre_read_ctx = None
+        try:
+            pre_read_ctx = gather_relevant_context(task, session.workdir, task_context)
+        except Exception:
+            pass  # Fail open -- never block the agent
+
+        # Append pre-read context to the rephrased task so the agent sees it
+        effective_task = rephrased_task
+        if pre_read_ctx:
+            effective_task = rephrased_task + "\n\n" + pre_read_ctx
+
         user_content = self.prompt_builder.build_user_content(
-            task=rephrased_task,
+            task=effective_task,
             image_path=image_path,
             video_path=video_path,
             url=url,
@@ -363,6 +375,28 @@ class AgentOrchestrator:
                     "files": sorted(list(session_touched_files)),
                     "commands": session_executed_commands,
                 })
+
+                # ── Soft Verification Gate ──
+                # If files were written/modified but no verification was run, nudge the agent
+                has_code_files = any(
+                    f.endswith((".py", ".js", ".ts", ".jsx", ".tsx", ".rs", ".go", ".java", ".c", ".cpp"))
+                    for f in session_touched_files
+                )
+                has_successful_verify = any(
+                    c.get("exit_code", -1) == 0 for c in session_executed_commands
+                )
+                if has_code_files and not has_successful_verify and not getattr(self, "_verification_nudge", False):
+                    self._verification_nudge = True
+                    session.context.add_user_message(
+                        "[SYSTEM - VERIFICATION] You created/modified code files but did not run "
+                        "any verification command. Please run a quick syntax check or test before finishing. "
+                        "Then output DONE: <summary>."
+                    )
+                    yield AgentEvent("verification_nudge", {
+                        "files": sorted(list(session_touched_files)),
+                        "message": "Nudging agent to verify before completing",
+                    })
+                    continue
 
                 # Cache if single-turn
                 if is_cacheable and turn == 0:
