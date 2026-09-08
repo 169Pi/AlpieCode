@@ -2,7 +2,7 @@
   "name": "alpiecode",
   "displayName": "AlpieCode",
   "description": "AI coding agent powered by 169Pi \u2014 chat, multimodal vision, fix bugs, generate tests, sandbox execution",
-  "version": "8.0.3",
+  "version": "8.0.4",
   "publisher": "169pi",
   "license": "MIT",
   "engines": {
@@ -36,6 +36,10 @@
       ]
     },
     "commands": [
+      {
+        "command": "alpiecode.startServer",
+        "title": "AlpieCode: Start API Server"
+      },
       {
         "command": "alpiecode.fixError",
         "title": "AlpieCode: Fix This Error"

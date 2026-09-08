@@ -71,6 +71,8 @@
   const historyListEl     = document.getElementById("history-list");
   const statusDot         = document.getElementById("status-dot");
   const statusText        = document.getElementById("status-text");
+  const headerLeft        = document.getElementById("header-left");
+  const startServerBtn    = document.getElementById("start-server-btn");
   const thinkingCheck     = document.getElementById("thinking-check");
   const tokenBadge        = document.getElementById("token-badge");
   const liveBuildBar      = document.getElementById("live-build-bar");
@@ -300,7 +302,7 @@
     inputEl.value = item.prompt || (item.cmd + " ");
     inputEl.focus();
     inputEl.style.height = "auto";
-    inputEl.style.height = Math.min(inputEl.scrollHeight, 120) + "px";
+    inputEl.style.height = Math.max(72, Math.min(inputEl.scrollHeight, 220)) + "px";
   }
 
   if (acRemoveBtn && activeContextBar) {
@@ -394,9 +396,32 @@
 
   inputEl.addEventListener("input", function() {
     inputEl.style.height = "auto";
-    inputEl.style.height = Math.min(inputEl.scrollHeight, 120) + "px";
+    inputEl.style.height = Math.max(72, Math.min(inputEl.scrollHeight, 220)) + "px";
     checkSlashTrigger();
   });
+
+  if (headerLeft) {
+    headerLeft.addEventListener("click", function() {
+      if (!statusDot.classList.contains("online")) {
+        statusText.textContent = "Starting server…";
+        statusDot.className = "dot starting";
+        if (startServerBtn) startServerBtn.classList.add("hidden");
+        vscode.postMessage({ action: "startServer" });
+      } else {
+        vscode.postMessage({ action: "checkStatus" });
+      }
+    });
+  }
+
+  if (startServerBtn) {
+    startServerBtn.addEventListener("click", function(e) {
+      e.stopPropagation();
+      statusText.textContent = "Starting server…";
+      statusDot.className = "dot starting";
+      startServerBtn.classList.add("hidden");
+      vscode.postMessage({ action: "startServer" });
+    });
+  }
 
   // Clipboard paste (images)
   document.addEventListener("paste", function(e) {
@@ -665,7 +690,7 @@
     var imgToSend = currentAttachedImage;
     clearAttachedImage();
     inputEl.value = "";
-    inputEl.style.height = "auto";
+    inputEl.style.height = "72px";
 
     updateBuildStatus({ status: "rephrasing", message: "Solidifying prompt requirements..." });
 
@@ -718,7 +743,7 @@
           inputEl.value = prompt;
           inputEl.focus();
           inputEl.style.height = "auto";
-          inputEl.style.height = Math.min(inputEl.scrollHeight, 120) + "px";
+          inputEl.style.height = Math.max(72, Math.min(inputEl.scrollHeight, 220)) + "px";
         });
       });
 
@@ -1375,13 +1400,18 @@
   }
 
   function updateStatus(status) {
-    statusDot.className = "dot " + (status.online ? "online" : "offline");
+    statusDot.className = "dot " + (status.online ? "online" : (status.starting ? "starting" : "offline"));
     if (status.online) {
       var backend = status.backend || "";
-      if (backend.length > 35) backend = backend.substring(0, 35) + "\u2026";
-      statusText.textContent = "Connected \u00b7 " + backend;
+      if (backend.length > 35) backend = backend.substring(0, 35) + "…";
+      statusText.textContent = "Connected · " + backend;
+      if (startServerBtn) startServerBtn.classList.add("hidden");
+    } else if (status.starting) {
+      statusText.textContent = "Starting server…";
+      if (startServerBtn) startServerBtn.classList.add("hidden");
     } else {
-      statusText.textContent = "Offline \u2014 run: alpiecode serve";
+      statusText.textContent = "Offline — click to start";
+      if (startServerBtn) startServerBtn.classList.remove("hidden");
     }
   }
 

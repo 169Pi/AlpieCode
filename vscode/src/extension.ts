@@ -27,6 +27,17 @@ export function activate(context: vscode.ExtensionContext) {
   // Register code action commands (right-click menu)
   registerCodeActions(context, chatProvider);
 
+  // Register command to start AlpieCode API server
+  context.subscriptions.push(
+    vscode.commands.registerCommand("alpiecode.startServer", async () => {
+      vscode.window.showInformationMessage("Starting AlpieCode API server...");
+      const ok = await chatProvider.startServer();
+      if (!ok) {
+        vscode.window.showErrorMessage("Could not connect to AlpieCode server. Run 'alpiecode serve' in terminal.");
+      }
+    })
+  );
+
   // Status bar item
   const statusBarItem = vscode.window.createStatusBarItem(
     vscode.StatusBarAlignment.Right,

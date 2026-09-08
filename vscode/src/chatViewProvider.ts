@@ -138,9 +138,16 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
     wv.webview.html = this._html(wv.webview);
     wv.webview.onDidReceiveMessage((m) => this._onMessage(m));
-    wv.onDidDispose(() => { this._abort(); this._view = undefined; });
+    wv.onDidDispose(() => {
+      this._abort();
+      if (this._healthInterval) {
+        clearInterval(this._healthInterval);
+        this._healthInterval = undefined;
+      }
+      this._view = undefined;
+    });
 
-    this._healthCheck();
+    this._startHealthMonitoring();
 
     // Track active editor to provide instant file context chip
     const activeDocDis = vscode.window.onDidChangeActiveTextEditor((editor) => {
@@ -217,7 +224,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
   /* ---- Streaming ---- */
 
-  private _stream(task: string, image?: string, reasoningLevel?: "thinking" | "no-thinking" | "high" | "medium" | "low" | string) {
+  private async _stream(task: string, image?: string, reasoningLevel?: "thinking" | "no-thinking" | "high" | "medium" | "low" | string) {
     this._abort();
 
     if (!this._activeId) { this._newConv(task); }
@@ -230,6 +237,26 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     const url = vscode.workspace
       .getConfiguration("alpiecode")
       .get<string>("serverUrl", "http://127.0.0.1:7169");
+
+    // Proactively verify server is reachable, auto-start if needed
+    const health = await checkHealth(url);
+    if (!health) {
+      this._post({ action: "buildStatus", status: "rephrasing", message: "Starting AlpieCode API server..." });
+      const started = await this.startServer();
+      if (!started) {
+        this._post({ action: "streamEnd" });
+        this._post({
+          action: "agentEvent",
+          event: {
+            type: "error",
+            data: {
+              error: `AlpieCode API server is offline at ${url}.\nPlease run 'alpiecode serve' in terminal or click 'Start Server' in the top header.`,
+            },
+          },
+        });
+        return;
+      }
+    }
 
     const workdir = this._workdir();
 
@@ -1021,6 +1048,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       case "checkStatus":
         this._healthCheck();
         break;
+      case "startServer":
+        this.startServer();
+        break;
       case "newChat":
         this._abort();
         this._activeId = null;
@@ -1544,7 +1574,18 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     return fp;
   }
 
-  /* ---- Health ---- */
+  /* ---- Health & Server Lifecycle ---- */
+
+  private _healthInterval?: NodeJS.Timeout;
+  private _isStartingServer = false;
+
+  private _startHealthMonitoring() {
+    if (this._healthInterval) { clearInterval(this._healthInterval); }
+    this._healthCheck();
+    this._healthInterval = setInterval(() => {
+      this._healthCheck();
+    }, 4000);
+  }
 
   private async _healthCheck() {
     const url = vscode.workspace
@@ -1552,12 +1593,75 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       .get<string>("serverUrl", "http://127.0.0.1:7169");
 
     const h = await checkHealth(url);
+    if (h) {
+      this._isStartingServer = false;
+      this._post({
+        action: "serverStatus",
+        status: { online: true, backend: h.backend, version: h.version },
+      });
+    } else {
+      this._post({
+        action: "serverStatus",
+        status: { online: false, starting: this._isStartingServer },
+      });
+    }
+  }
+
+  public async startServer(): Promise<boolean> {
+    const url = vscode.workspace
+      .getConfiguration("alpiecode")
+      .get<string>("serverUrl", "http://127.0.0.1:7169");
+
+    const h = await checkHealth(url);
+    if (h) {
+      this._isStartingServer = false;
+      this._post({
+        action: "serverStatus",
+        status: { online: true, backend: h.backend, version: h.version },
+      });
+      return true;
+    }
+
+    this._isStartingServer = true;
     this._post({
       action: "serverStatus",
-      status: h
-        ? { online: true, backend: h.backend, version: h.version }
-        : { online: false },
+      status: { online: false, starting: true },
     });
+
+    const workdir = this._workdir();
+    try {
+      if (this._isWslWorkspace()) {
+        const startCmd = `cd '${workdir}' && (test -f .venv/bin/python && nohup .venv/bin/python -c "from codeagent.server import run_server; run_server()" > /tmp/alpiecode_serve.log 2>&1 &) || (nohup alpiecode serve > /tmp/alpiecode_serve.log 2>&1 &)`;
+        cp.exec(`wsl -e bash -c "${startCmd.replace(/"/g, '\"')}"`);
+      } else {
+        const cmd = process.platform === "win32" ? "start /b alpiecode.exe serve" : "nohup alpiecode serve > /tmp/alpiecode_serve.log 2>&1 &";
+        cp.exec(cmd, { cwd: workdir });
+      }
+    } catch (err) {
+      console.error("Failed to start AlpieCode server process:", err);
+    }
+
+    // Poll for up to 10 seconds (20 iterations * 500ms)
+    for (let i = 0; i < 20; i++) {
+      await new Promise((r) => setTimeout(r, 500));
+      const res = await checkHealth(url);
+      if (res) {
+        this._isStartingServer = false;
+        this._post({
+          action: "serverStatus",
+          status: { online: true, backend: res.backend, version: res.version },
+        });
+        vscode.window.showInformationMessage(`AlpieCode Server is online (${res.backend || "Ready"})`);
+        return true;
+      }
+    }
+
+    this._isStartingServer = false;
+    this._post({
+      action: "serverStatus",
+      status: { online: false, starting: false },
+    });
+    return false;
   }
 
   /* ---- History ---- */
@@ -1654,9 +1758,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 <body>
 <div id="app">
   <div id="header">
-    <div id="header-left">
+    <div id="header-left" title="Click to check or start AlpieCode server">
       <span id="status-dot" class="dot offline"></span>
-      <span id="status-text">Connecting\u2026</span>
+      <span id="status-text">Connecting…</span>
+      <button id="start-server-btn" class="start-server-btn hidden" title="Start AlpieCode Server">Start Server</button>
     </div>
     <div id="header-right">
       <span id="token-badge" class="token-badge" title="Generation speed and token usage"><span class="token-val">0 tok/s · 0 tok</span></span>
@@ -1733,7 +1838,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       <button id="attach-img-btn" title="Attach Image / Screenshot"><svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M4.502 9a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z"/><path d="M14.002 13a2 2 0 0 1-2 2h-10a2 2 0 0 1-2-2V5A2 2 0 0 1 2 3a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v8a2 2 0 0 1-1.998 2zM14 2H4a1 1 0 0 0-1 1h9.002a2 2 0 0 1 2 2v7A1 1 0 0 0 15 11V3a1 1 0 0 0-1-1zM2.002 4a1 1 0 0 0-1 1v8l2.646-2.354a.5.5 0 0 1 .63-.062l2.66 1.773 3.71-3.71a.5.5 0 0 1 .577-.094l1.777 1.947V5a1 1 0 0 0-1-1h-10z"/></svg> Image</button>
     </div>
     <div id="input-row">
-      <textarea id="user-input" placeholder="Ask AlpieCode anything... (type / for commands)" rows="1"></textarea>
+      <textarea id="user-input" placeholder="Ask AlpieCode anything... (type / for commands, Shift+Enter for newline)" rows="3"></textarea>
       <button id="send-btn" title="Send (Ctrl+Enter)">\u27a4</button>
       <button id="cancel-btn" title="Stop" class="hidden">\u25a0</button>
     </div>
