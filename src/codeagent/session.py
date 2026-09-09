@@ -64,6 +64,7 @@ class SessionManager:
                 "workdir": str(s.workdir),
                 "created_at": s.created_at,
                 "estimated_tokens": s.context.estimate_tokens(),
+                "total_history_tokens": getattr(s.context, "estimate_total_tokens", s.context.estimate_tokens)(),
             }
             for s in self._sessions.values()
         ]

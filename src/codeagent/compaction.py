@@ -10,10 +10,12 @@ Strategy:
   - Summarize older tool calls and results into compact descriptions
   - Preserve all user messages verbatim
   - Track approximate token count using a simple heuristic (4 chars ≈ 1 token)
+  - Generate structured conversation summaries and extract relevant history
+    for the decoupled ContextManager build_context() pipeline.
 """
 
 import json
-from typing import List
+from typing import Any, Dict, List, Optional
 
 # Our model's context window
 MAX_CONTEXT_TOKENS = 262_144
@@ -33,14 +35,16 @@ def estimate_tokens(messages: List[dict]) -> int:
             content = msg.get("content") or ""
             if isinstance(content, str):
                 total_chars += len(content)
+            elif isinstance(content, list):
+                total_chars += sum(len(str(c)) for c in content)
             # Account for tool call arguments
             tool_calls = msg.get("tool_calls", [])
             if tool_calls:
                 for tc in tool_calls:
                     if isinstance(tc, dict):
                         fn = tc.get("function", {})
-                        total_chars += len(fn.get("arguments", ""))
-                        total_chars += len(fn.get("name", ""))
+                        total_chars += len(str(fn.get("arguments", "")))
+                        total_chars += len(str(fn.get("name", "")))
     return total_chars // CHARS_PER_TOKEN
 
 
@@ -83,6 +87,138 @@ def _summarize_tool_result(tool_name: str, content: str) -> str:
     return content[:250] + f"... ({len(content)} chars total)"
 
 
+def extract_conversation_summary(
+    messages: List[dict],
+    metadata: Optional[List[dict]] = None,
+) -> str:
+    """
+    Extract a concise, structured markdown summary of historical turns.
+
+    Extracts:
+      - Initial user task / goal
+      - Key files created, edited, or inspected
+      - Commands executed and their success/failure
+      - Execution plan status
+      - Crucial findings or errors encountered
+    """
+    if not messages:
+        return ""
+
+    initial_task = ""
+    files_touched = set()
+    commands_run = []
+    latest_plan = ""
+    key_events = []
+
+    for i, msg in enumerate(messages):
+        role = msg.get("role", "")
+        content = msg.get("content") or ""
+
+        # Extract initial goal from first non-system user message
+        if role == "user" and not initial_task:
+            if isinstance(content, str) and content.strip():
+                lines = content.strip().splitlines()
+                initial_task = lines[0][:150]
+                if len(lines[0]) > 150:
+                    initial_task += "..."
+
+        # Assistant tool calls
+        if role == "assistant" and msg.get("tool_calls"):
+            for tc in msg.get("tool_calls", []):
+                tc_dict = tc if isinstance(tc, dict) else {}
+                fn = tc_dict.get("function", {})
+                name = fn.get("name", "")
+                args_raw = fn.get("arguments", "{}")
+                try:
+                    args = json.loads(args_raw) if isinstance(args_raw, str) else args_raw
+                except Exception:
+                    args = {}
+
+                if name in ("write_file", "patch_file", "read_file"):
+                    p = args.get("path") or args.get("file_path")
+                    if p:
+                        files_touched.add(f"{name}:{p}")
+                elif name == "bash":
+                    cmd = args.get("command", "")
+                    if cmd:
+                        commands_run.append(cmd[:80])
+
+        # Tool outputs
+        if role == "tool":
+            content_str = str(content)
+            if "[Plan updated]" in content_str or "Plan Status:" in content_str or "## Implementation Plan" in content_str:
+                latest_plan = content_str[-500:]  # Keep latest plan snapshot
+            elif "exit_code" in content_str and '"exit_code": 0' not in content_str:
+                # Capture error indication
+                key_events.append("Command execution returned an error (addressed in subsequent turns)")
+
+    summary_lines = []
+    if initial_task:
+        summary_lines.append(f"- **Initial Goal**: {initial_task}")
+    if files_touched:
+        files_preview = ", ".join(list(files_touched)[:6])
+        if len(files_touched) > 6:
+            files_preview += f" (+{len(files_touched) - 6} more)"
+        summary_lines.append(f"- **Files Touched**: {files_preview}")
+    if commands_run:
+        recent_cmds = ", ".join(commands_run[-4:])
+        summary_lines.append(f"- **Recent Commands Executed**: {recent_cmds}")
+    if latest_plan:
+        summary_lines.append(f"- **Execution Plan Snapshot**:\n  {latest_plan.strip()}")
+    if key_events:
+        summary_lines.append(f"- **Notes**: {key_events[-1]}")
+
+    if not summary_lines:
+        return ""
+
+    return "### Conversation Progress Summary (Prior Turns):\n" + "\n".join(summary_lines)
+
+
+def select_relevant_history(
+    messages: List[dict],
+    metadata: Optional[List[dict]] = None,
+    current_query: str = "",
+    token_budget: int = 2048,
+) -> str:
+    """
+    Select high-value historical anchors from distant history (e.g. plan updates,
+    key decisions, important command outcomes) formatted as concise contextual notes.
+    """
+    if not messages:
+        return ""
+
+    high_value_notes = []
+    seen_plans = set()
+
+    # Search backwards for high-importance messages
+    for i in range(len(messages) - 1, -1, -1):
+        msg = messages[i]
+        role = msg.get("role", "")
+        content = str(msg.get("content") or "")
+
+        # High priority: update_plan outputs
+        if role == "tool" and ("[Plan updated]" in content or "Plan Status:" in content):
+            if "plan" not in seen_plans:
+                seen_plans.add("plan")
+                lines = [l.strip() for l in content.splitlines() if l.strip() and not l.startswith("```")]
+                snippet = "\n".join(lines[:8])
+                high_value_notes.append(f"- **Active Plan Anchor**:\n{snippet}")
+
+        # High priority: stall advice or system corrections
+        if role == "user" and ("[STALL DETECTED]" in content or "[SYSTEM]" in content):
+            high_value_notes.append(f"- **System Intervention**: {content[:200]}")
+
+        # If we have enough context, stop
+        total_len = sum(len(n) for n in high_value_notes)
+        if (total_len // CHARS_PER_TOKEN) >= token_budget:
+            break
+
+    if not high_value_notes:
+        return ""
+
+    return "### Relevant Historical Anchors:\n" + "\n".join(reversed(high_value_notes))
+
+
 def compact_messages(messages: List[dict]) -> List[dict]:
     """
     Compact a message list by summarizing older turns.
@@ -109,7 +245,6 @@ def compact_messages(messages: List[dict]) -> List[dict]:
 
     # Build a compacted summary of old messages
     compacted_old = []
-    summary_parts = []
 
     for msg in old_messages:
         role = msg.get("role", "")

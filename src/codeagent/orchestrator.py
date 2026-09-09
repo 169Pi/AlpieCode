@@ -352,7 +352,7 @@ class AgentOrchestrator:
                 if not (hasattr(self.backend, "chat_completion_stream") and not is_offline):
                     yield AgentEvent("message", {"content": resp.content})
 
-                extract_and_save_memories(session.workdir, session.context.messages)
+                extract_and_save_memories(session.workdir, getattr(session.context, 'all_messages', session.context.messages))
 
                 # Generate and write real walkthrough.md file to the project workspace
                 from pathlib import Path as _Path
@@ -478,15 +478,15 @@ class AgentOrchestrator:
                 if not (hasattr(self.backend, "chat_completion_stream") and not is_offline):
                     yield AgentEvent("message", {"content": resp.content})
 
-                extract_and_save_memories(session.workdir, session.context.messages)
+                extract_and_save_memories(session.workdir, getattr(session.context, 'all_messages', session.context.messages))
                 yield AgentEvent("done", {"summary": resp.content})
                 return
 
             # Empty response
-            extract_and_save_memories(session.workdir, session.context.messages)
+            extract_and_save_memories(session.workdir, getattr(session.context, 'all_messages', session.context.messages))
             yield AgentEvent("done", {"summary": "Task completed."})
             return
 
         status = progress_monitor.get_status_summary()
         yield AgentEvent("max_turns_reached", {"max_turns": safety_ceiling, "progress": status})
-        extract_and_save_memories(session.workdir, session.context.messages)
+        extract_and_save_memories(session.workdir, getattr(session.context, 'all_messages', session.context.messages))
