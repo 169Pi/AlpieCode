@@ -297,6 +297,14 @@ class ContextManager:
                     "content": "\n\n".join(supplemental_parts),
                 })
 
+            # Ensure user query anchor: endpoint requires at least one 'user' message
+            has_user_in_recent = any(m.get("role") == "user" for m in recent_messages)
+            if not has_user_in_recent:
+                for m in distant_messages:
+                    if m.get("role") == "user":
+                        context_blocks.append(dict(m))
+                        break
+
         # ── Layer 4 & 5: Recent Messages and Current Request ──
         if len(recent_messages) > 6:
             for i in range(len(recent_messages) - 4):
