@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 
 app = FastAPI()
 
@@ -6,7 +6,7 @@ app = FastAPI()
 @app.get("/")
 @app.post("/")
 async def hello():
-    return "hello"
+    return Response(content="hello", media_type="text/plain")
 
 
 if __name__ == "__main__":
