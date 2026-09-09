@@ -567,7 +567,10 @@
     });
 
     messagesEl.appendChild(card);
-    scrollToBottom();
+    scrollToBottom(true);
+    setTimeout(function() {
+      scrollToBottom(true);
+    }, 60);
   }
 
   // ---- Webview Message Handler ----
@@ -937,7 +940,10 @@
     card.appendChild(actions);
 
     messagesEl.appendChild(card);
-    scrollToBottom();
+    scrollToBottom(true);
+    setTimeout(function() {
+      scrollToBottom(true);
+    }, 60);
   }
 
   // ---- Message Renderers ----
@@ -1220,14 +1226,14 @@
     var cardHdr = card.querySelector(".artifact-card-header");
     if (cardHdr) {
       cardHdr.addEventListener("click", function() {
-        vscode.postMessage({ action: "openWalkthrough" });
+        vscode.postMessage({ action: "openWalkthrough", path: filePath });
       });
     }
     var openBtn = card.querySelector("#open-walkthrough-btn");
     if (openBtn) {
       openBtn.addEventListener("click", function(e) {
         e.stopPropagation();
-        vscode.postMessage({ action: "openWalkthrough" });
+        vscode.postMessage({ action: "openWalkthrough", path: filePath });
       });
     }
 
@@ -1240,7 +1246,10 @@
     }
 
     messagesEl.appendChild(card);
-    scrollToBottom();
+    scrollToBottom(true);
+    setTimeout(function() {
+      scrollToBottom(true);
+    }, 60);
   }
 
   var lastToolCard = null;

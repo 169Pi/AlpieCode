@@ -329,14 +329,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         // Emit Antigravity-style completion Walkthrough Card
         const uniqueFiles = [...new Set(this._modifiedFiles)];
         if (uniqueFiles.length > 0 || this._executedCommands.length > 0) {
-          this._post({
-            action: "walkthrough",
-            data: {
-              summary: "Changes completed for: " + task,
-              files: uniqueFiles,
-              commands: this._executedCommands,
-              fileStats: this._fileStats
-            }
+          this._handleWalkthroughEvent(workdir, {
+            summary: "Changes completed for: " + task,
+            files: uniqueFiles,
+            commands: this._executedCommands,
+            fileStats: this._fileStats
           });
         }
 
@@ -1082,7 +1079,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         this._insertCodeAtCursor(m.code);
         break;
             case "openWalkthrough":
-        this._openMarkdownPreview("walkthrough.md");
+        this._openMarkdownPreview(m.path || "walkthrough.md");
         break;
       case "openDiffForFile":
         this._openDiffForFile(m.path);
@@ -1125,21 +1122,20 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     const commands = data.commands || [];
 
     // Ensure walkthrough.md is written to disk in the workspace
-    const localWalkthrough = this._toLocalPath(path.join(workdir, "walkthrough.md"));
+    const localWalkthrough = this._toLocalPath("walkthrough.md");
     try {
-      if (!fs.existsSync(localWalkthrough)) {
-        let content = `# Walkthrough\n\n## Summary\n${summary}\n\n## Changes Made\n`;
+      let content = `# Walkthrough\n\n## Summary\n${summary}\n\n## Changes Made\n`;
+      if (files.length > 0) {
         files.forEach((f: string) => { content += `- \`${f}\`\n`; });
-        if (commands.length > 0) {
-          content += `\n## Verification\n`;
-          commands.forEach((c: any) => { content += `- \`${c.command || c}\` (Verified)\n`; });
-        }
-        fs.writeFileSync(localWalkthrough, content, "utf-8");
+      } else {
+        content += `- (No files changed)\n`;
       }
+      if (commands.length > 0) {
+        content += `\n## Verification\n`;
+        commands.forEach((c: any) => { content += `- \`${c.command || c.cmd || c}\` (Verified)\n`; });
+      }
+      fs.writeFileSync(localWalkthrough, content, "utf-8");
     } catch {}
-
-    // Automatically open Walkthrough Preview tab in editor (Antigravity standard)
-    this._openMarkdownPreview("walkthrough.md");
 
     this._post({
       action: "walkthrough",
@@ -1158,10 +1154,35 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   /** Open VS Code native side-by-side diff for any file against git HEAD or empty base. */
   /** Open native VS Code Markdown Preview tab (Walkthrough (preview)). */
   private async _openMarkdownPreview(filePath: string) {
-    if (!filePath) return;
-    const abs = path.isAbsolute(filePath) ? filePath : path.join(this._workdir(), filePath);
-    const local = this._toLocalPath(abs);
-    if (!fs.existsSync(local)) return;
+    if (!filePath) { filePath = "walkthrough.md"; }
+    const local = this._toLocalPath(filePath);
+
+    // If walkthrough.md does not exist on disk yet, generate it so it can be viewed
+    if (!fs.existsSync(local)) {
+      if (path.basename(local).toLowerCase() === "walkthrough.md") {
+        try {
+          const files = [...new Set(this._modifiedFiles)];
+          const cmds = this._executedCommands;
+          let content = `# Walkthrough\n\n## Summary\nCompleted project changes.\n\n## Changes Made\n`;
+          if (files.length > 0) {
+            files.forEach((f: string) => { content += `- \`${f}\`\n`; });
+          } else {
+            content += `- (No files changed)\n`;
+          }
+          if (cmds.length > 0) {
+            content += `\n## Verification\n`;
+            cmds.forEach((c: any) => { content += `- \`${c.command || c.cmd || c}\` (Verified)\n`; });
+          }
+          fs.writeFileSync(local, content, "utf-8");
+        } catch (err) {
+          vscode.window.showWarningMessage(`Could not generate ${filePath}: ${err}`);
+          return;
+        }
+      } else {
+        vscode.window.showWarningMessage(`File not found: ${filePath}`);
+        return;
+      }
+    }
 
     const uri = vscode.Uri.file(local);
     try {
@@ -1275,12 +1296,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
   private _openFileInEditor(filePath: string) {
     if (!filePath) return;
-    const abs = path.isAbsolute(filePath) ? filePath : path.join(this._workdir(), filePath);
-    const local = this._toLocalPath(abs);
+    const local = this._toLocalPath(filePath);
     if (fs.existsSync(local)) {
       vscode.workspace.openTextDocument(vscode.Uri.file(local)).then(doc => {
         vscode.window.showTextDocument(doc, { preview: true });
       });
+    } else {
+      vscode.window.showWarningMessage(`File not found: ${filePath}`);
     }
   }
 
@@ -1503,21 +1525,26 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
 
     // If already absolute Windows path or UNC path
-    if (/^[a-zA-Z]:[\\\/]/.test(filePath) || /^\\\\/.test(filePath)) {
+    if (/^[a-zA-Z]:[\\/]/.test(filePath) || /^\\\\/.test(filePath)) {
       return filePath;
     }
 
-    // If it's a POSIX WSL path like /home/singh/Projects/test/foo.py
-    if (this._isWslWorkspace() && filePath.startsWith("/")) {
-      const posixWorkdir = this._workdir();
-      if (filePath.startsWith(posixWorkdir)) {
-        const rel = filePath.slice(posixWorkdir.length).replace(/^[\\\/]+/, "");
+    // Normalize forward slashes to inspect POSIX paths
+    const norm = filePath.replace(/\\/g, "/");
+    const normWorkdir = this._workdir().replace(/\\/g, "/");
+    const posixPath = norm.startsWith("/") ? norm : "/" + norm;
+
+    // If it's a POSIX WSL path like /home/singh/... or \home\singh...
+    if (this._isWslWorkspace() && (norm.startsWith("/") || norm.startsWith("home/"))) {
+      if (posixPath.startsWith(normWorkdir)) {
+        const rel = posixPath.slice(normWorkdir.length).replace(/^\/+/, "");
         return path.join(rootFs, rel);
       }
     }
 
-    // Relative path: join directly to rootFs
-    return path.join(rootFs, filePath);
+    // Relative path: strip leading slashes and join directly to rootFs
+    const cleanRel = filePath.replace(/^[\\/]+/, "");
+    return path.join(rootFs, cleanRel);
   }
 
   /** True when VS Code accesses WSL files via UNC path (\\wsl.localhost\...) */
