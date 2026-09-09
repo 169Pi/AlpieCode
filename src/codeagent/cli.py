@@ -219,10 +219,6 @@ def main():
         undo_last_session(Path(args.workdir).resolve())
         return
 
-    elif args.command == "doctor":
-        from .doctor import run_doctor
-        sys.exit(run_doctor())
-
     elif args.command == "explain":
         target = args.target
         target_path = Path(args.workdir) / target if not Path(target).is_absolute() else Path(target)
@@ -253,51 +249,6 @@ def main():
             github_repo=getattr(args, "github", None),
             debug=getattr(args, "debug", False),
         )
-
-    elif args.command == "diff":
-        workdir = Path(args.workdir).resolve()
-        # Show git diff since the first checkpoint
-        result = subprocess.run(
-            ["git", "log", "--oneline", "--all"],
-            cwd=workdir, capture_output=True, text=True
-        )
-        if result.returncode != 0:
-            print("Not a git repository or no commits found.")
-            return
-
-        # Find the start checkpoint
-        log_lines = result.stdout.strip().splitlines()
-        start_sha = None
-        for line in reversed(log_lines):
-            if "checkpoint: start" in line:
-                start_sha = line.split()[0]
-                break
-
-        if not start_sha:
-            print("No AlpieCode checkpoint found. Run a task first.")
-            return
-
-        diff_result = subprocess.run(
-            ["git", "diff", start_sha, "HEAD", "--stat"],
-            cwd=workdir, capture_output=True, text=True
-        )
-        print(f"Changes since AlpieCode started (from {start_sha}):\n")
-        print(diff_result.stdout)
-
-        # Also show the full diff
-        full_diff = subprocess.run(
-            ["git", "diff", start_sha, "HEAD"],
-            cwd=workdir, capture_output=True, text=True
-        )
-        if full_diff.stdout:
-            try:
-                from rich.console import Console
-                from rich.syntax import Syntax
-                console = Console()
-                syntax = Syntax(full_diff.stdout, "diff", theme="monokai")
-                console.print(syntax)
-            except ImportError:
-                print(full_diff.stdout)
 
 
 if __name__ == "__main__":

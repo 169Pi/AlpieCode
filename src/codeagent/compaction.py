@@ -240,6 +240,15 @@ def compact_messages(messages: List[dict]) -> List[dict]:
 
     # Split into old and recent
     cutoff = len(messages) - KEEP_RECENT_TURNS
+
+    # ── Tool-Call Pairing Guard ──
+    # If cutoff lands on a 'tool' message, move it backwards to include
+    # the preceding 'assistant' message that owns the tool_call_id.
+    # This prevents OpenAI API 400 errors ("missing tool result for tool_call_id").
+    min_cutoff = 1 if system else 0
+    while cutoff > min_cutoff and messages[cutoff].get("role") == "tool":
+        cutoff -= 1
+
     old_messages = messages[1:cutoff] if system else messages[:cutoff]
     recent_messages = messages[cutoff:]
 

@@ -118,6 +118,7 @@ class AgentOrchestrator:
         # Track touched files and executed commands for Antigravity Walkthrough
         session_touched_files = set()
         session_executed_commands = []
+        verification_nudged = False  # Per-task local flag (prevents cross-session state leak)
 
         # ── Response cache check ──
         is_cacheable = not any([image_path, video_path, url, github_repo])
@@ -142,11 +143,12 @@ class AgentOrchestrator:
                 yield AgentEvent("done", {"summary": cached["response"]})
                 return
 
-        # ── Dynamic backend re-check ──
-        if isinstance(self.backend, LocalBackend) and is_server_reachable(cfg.base_url, timeout=1.5):
-            self.backend = OpenAIBackend(cfg)
+        # ── Dynamic backend re-check (thread-safe: use task-local backend) ──
+        task_backend = self.backend
+        if isinstance(task_backend, LocalBackend) and is_server_reachable(cfg.base_url, timeout=1.5):
+            task_backend = OpenAIBackend(cfg)
 
-        is_offline = not self.backend.is_available or isinstance(self.backend, LocalBackend)
+        is_offline = not task_backend.is_available or isinstance(task_backend, LocalBackend)
         session.is_offline = is_offline
 
         # ── Configure tools & system prompt based on complexity ──
@@ -164,7 +166,7 @@ class AgentOrchestrator:
         })
         rephrased_task = task
         try:
-            rephrased_task = self.rephraser.rephrase(task, self.backend, task_context)
+            rephrased_task = self.rephraser.rephrase(task, task_backend, task_context)
         except Exception:
             rephrased_task = task
 
@@ -199,7 +201,7 @@ class AgentOrchestrator:
         yield AgentEvent("start", {
             "task": task,
             "workdir": str(session.workdir),
-            "backend": self.backend.name,
+            "backend": task_backend.name,
             "is_offline": is_offline,
             "tool_count": len(active_tools),
             "complexity": complexity,
@@ -261,9 +263,9 @@ class AgentOrchestrator:
                 else:
                     max_tokens = 2048 if is_offline else effective_max_tokens
 
-                if hasattr(self.backend, "chat_completion_stream") and not is_offline:
+                if hasattr(task_backend, "chat_completion_stream") and not is_offline:
                     resp = None
-                    for event_type, data in self.backend.chat_completion_stream(
+                    for event_type, data in task_backend.chat_completion_stream(
                         messages=session.context.messages,
                         tools=active_tools if active_tools else None,
                         temperature=cfg.temperature,
@@ -275,7 +277,7 @@ class AgentOrchestrator:
                         else:
                             yield AgentEvent(event_type, data)
                 else:
-                    resp = self.backend.chat_completion(
+                    resp = task_backend.chat_completion(
                         messages=session.context.messages,
                         tools=active_tools if active_tools else None,
                         temperature=cfg.temperature,
@@ -284,14 +286,14 @@ class AgentOrchestrator:
                     )
             except Exception as e:
                 # Online error -> fallback to local
-                if not is_offline and isinstance(self.backend, OpenAIBackend):
+                if not is_offline and isinstance(task_backend, OpenAIBackend):
                     yield AgentEvent("fallback", {"error": str(e), "message": "Falling back to local engine"})
-                    self.backend = LocalBackend(cfg)
+                    task_backend = LocalBackend(cfg)
                     session.is_offline = True
                     is_offline = True
                     active_tools = self.prompt_builder.get_tools(is_offline=True, complexity=complexity)
                     try:
-                        resp = self.backend.chat_completion(
+                        resp = task_backend.chat_completion(
                             messages=session.context.messages,
                             tools=active_tools if active_tools else None,
                             temperature=cfg.temperature,
@@ -305,7 +307,11 @@ class AgentOrchestrator:
                     yield AgentEvent("error", {"error": str(e)})
                     return
 
-            if resp.reasoning and not (hasattr(self.backend, "chat_completion_stream") and not is_offline):
+            if resp is None:
+                yield AgentEvent("error", {"error": "Backend returned no response"})
+                return
+
+            if resp.reasoning and not (hasattr(task_backend, "chat_completion_stream") and not is_offline):
                 yield AgentEvent("thinking", {"content": resp.reasoning})
 
             session.context.add_assistant_response(resp)
@@ -349,7 +355,7 @@ class AgentOrchestrator:
                             resp.content = parts[0] + "DONE: " + parts[1].strip()
 
                 # Only yield 'message' if tokens were NOT already streamed chunk-by-chunk
-                if not (hasattr(self.backend, "chat_completion_stream") and not is_offline):
+                if not (hasattr(task_backend, "chat_completion_stream") and not is_offline):
                     yield AgentEvent("message", {"content": resp.content})
 
                 extract_and_save_memories(session.workdir, getattr(session.context, 'all_messages', session.context.messages))
@@ -385,8 +391,8 @@ class AgentOrchestrator:
                 has_successful_verify = any(
                     c.get("exit_code", -1) == 0 for c in session_executed_commands
                 )
-                if has_code_files and not has_successful_verify and not getattr(self, "_verification_nudge", False):
-                    self._verification_nudge = True
+                if has_code_files and not has_successful_verify and not verification_nudged:
+                    verification_nudged = True
                     session.context.add_user_message(
                         "[SYSTEM - VERIFICATION] You created/modified code files but did not run "
                         "any verification command. Please run a quick syntax check or test before finishing. "
@@ -475,7 +481,7 @@ class AgentOrchestrator:
                             resp.content = parts[0] + "DONE: " + parts[1].strip()
 
                 # Only yield 'message' if tokens were NOT already streamed chunk-by-chunk
-                if not (hasattr(self.backend, "chat_completion_stream") and not is_offline):
+                if not (hasattr(task_backend, "chat_completion_stream") and not is_offline):
                     yield AgentEvent("message", {"content": resp.content})
 
                 extract_and_save_memories(session.workdir, getattr(session.context, 'all_messages', session.context.messages))

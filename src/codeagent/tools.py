@@ -496,7 +496,7 @@ def _bash(workdir: Path, command: str) -> str:
 
         return output
     except subprocess.TimeoutExpired:
-        return json.dumps({"stdout": "", "stderr": "Command timed out after 300s", "exit_code": -1})
+        return json.dumps({"stdout": "", "stderr": "Command timed out after 120s", "exit_code": -1})
 
 
 def _read_file(workdir: Path, path: str, start_line: int = None, end_line: int = None) -> str:
