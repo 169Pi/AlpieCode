@@ -11,6 +11,7 @@ Delegates agent orchestration to AgentOrchestrator and handles Rich terminal UI 
 
 import json
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -335,7 +336,12 @@ def run_agent(
             _print_reasoning(event.data["content"])
 
         elif event.type == "tool_call" and verbose:
+            if has_streamed_tokens:
+                sys.stdout.write("\n")
+                sys.stdout.flush()
+                has_streamed_tokens = False
             _print_tool_call(event.data["turn"], event.data["name"], event.data["arguments"])
+            has_printed_anything = True
 
         elif event.type == "tool_result":
             if verbose:
@@ -343,7 +349,13 @@ def run_agent(
             _checkpoint(workdir, f"checkpoint: turn {event.data['turn']}")
 
         elif event.type == "message" and verbose:
-            _print_assistant_message(event.data["content"])
+            if has_streamed_tokens:
+                sys.stdout.write("\n")
+                sys.stdout.flush()
+                has_streamed_tokens = False
+            else:
+                _print_assistant_message(event.data["content"])
+            has_printed_anything = True
             _checkpoint(workdir, "checkpoint: response")
 
         elif event.type == "fallback" and verbose:
@@ -393,7 +405,13 @@ def run_agent(
                 print(f"\n🛑 Safety ceiling ({event.data['ceiling']}) reached.")
 
         elif event.type == "done":
-            summary = event.data.get("summary", "")
+            if has_streamed_tokens:
+                sys.stdout.write("\n\n")
+                sys.stdout.flush()
+                has_streamed_tokens = False
+            elif not has_printed_anything and event.data.get("summary"):
+                _print_assistant_message(event.data["summary"])
+                has_printed_anything = True
             _checkpoint(workdir, "checkpoint: done")
             if debug and HAS_RICH:
                 console.rule("[bold green]✅ Complete[/bold green]")
@@ -461,8 +479,16 @@ def run_chat(workdir: Path, cfg: Config, verbose: bool = True) -> None:
             console.print("Goodbye! 👋")
             break
 
+        has_streamed_chat = False
         for event in orchestrator.run_task(session, user_input, cfg):
-            if event.type == "turn_start" and debug:
+            if event.type == "token":
+                delta = event.data.get("delta", "")
+                if delta:
+                    sys.stdout.write(delta)
+                    sys.stdout.flush()
+                    has_streamed_chat = True
+
+            elif event.type == "turn_start" and debug:
                 if HAS_RICH:
                     console.print(f"[dim]── Step {event.data['turn']} ──[/dim]")
                 else:
@@ -480,7 +506,11 @@ def run_chat(workdir: Path, cfg: Config, verbose: bool = True) -> None:
                 _checkpoint(workdir, f"checkpoint: chat turn {event.data['turn']}")
 
             elif event.type == "message":
-                _print_assistant_message(event.data["content"])
+                if has_streamed_chat:
+                    sys.stdout.write("\n")
+                    has_streamed_chat = False
+                else:
+                    _print_assistant_message(event.data["content"])
                 _checkpoint(workdir, "checkpoint: done")
 
             elif event.type == "error":
@@ -490,4 +520,9 @@ def run_chat(workdir: Path, cfg: Config, verbose: bool = True) -> None:
                     print(f"❌ Model error: {event.data['error']}")
 
             elif event.type == "done":
+                if has_streamed_chat:
+                    sys.stdout.write("\n")
+                    has_streamed_chat = False
+                elif event.data.get("summary"):
+                    _print_assistant_message(event.data["summary"])
                 break
