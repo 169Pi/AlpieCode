@@ -250,9 +250,43 @@ def run_agent(
 
     current_turn = 0
     last_discovery = {}
+    has_streamed_tokens = False
+    has_printed_anything = False
 
     for event in event_stream:
-        if event.type == "discovery" and verbose:
+        if event.type == "token" and verbose:
+            delta = event.data.get("delta", "")
+            if delta:
+                if not has_streamed_tokens:
+                    sys.stdout.write("\n")
+                    has_streamed_tokens = True
+                sys.stdout.write(delta)
+                sys.stdout.flush()
+                has_printed_anything = True
+
+        elif event.type == "thinking_start" and verbose:
+            if debug:
+                if HAS_RICH:
+                    console.print("\n[dim italic]Thinking...[/dim italic]", style="dim")
+                else:
+                    sys.stdout.write("\nThinking...\n")
+                    sys.stdout.flush()
+
+        elif event.type == "thinking_delta" and verbose and debug:
+            delta = event.data.get("delta", "")
+            if delta:
+                sys.stdout.write(delta)
+                sys.stdout.flush()
+
+        elif event.type == "thinking_end" and verbose and debug:
+            duration = event.data.get("duration", 0)
+            if HAS_RICH:
+                console.print(f" [dim]({duration}s)[/dim]\n")
+            else:
+                sys.stdout.write(f" ({duration}s)\n")
+                sys.stdout.flush()
+
+        elif event.type == "discovery" and verbose:
             last_discovery = event.data
             if debug and HAS_RICH:
                 console.print(Panel(
