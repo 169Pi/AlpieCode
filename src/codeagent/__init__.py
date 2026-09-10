@@ -16,7 +16,7 @@ Supports:
 from pathlib import Path
 from typing import Optional, Any, Dict
 
-__version__ = "9.0.0"
+__version__ = "9.0.1"
 
 def run(task: str, workdir: str = ".", reasoning_level: str = "thinking", **kwargs):
     """Run an autonomous coding task programmatically."""
