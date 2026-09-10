@@ -119,7 +119,8 @@ def test_bug06_fallback_preserves_orchestrator_backend(tmp_path):
     )
 
     with patch.object(LocalBackend, "__init__", return_value=None), \
-         patch.object(LocalBackend, "chat_completion", return_value=fallback_resp):
+         patch.object(LocalBackend, "chat_completion", return_value=fallback_resp), \
+         patch("codeagent.orchestrator.is_internet_available", return_value=False):
         events = list(orchestrator.run_task(session=session, task="Fallback test", cfg=cfg))
 
     event_types = [e.type for e in events]

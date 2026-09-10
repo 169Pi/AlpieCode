@@ -46,7 +46,7 @@ from .backends.base import InferenceBackend, ChatResponse
 from .backends.local_backend import LocalBackend
 from .backends.openai_backend import OpenAIBackend
 from .cache import get_cache
-from .config import Config, is_server_reachable
+from .config import Config, is_server_reachable, is_internet_available
 from .memory import extract_and_save_memories
 from .discovery import build_task_context, gather_relevant_context, COMPLEXITY_CONFIG
 from .progress import ProgressMonitor
@@ -285,23 +285,54 @@ class AgentOrchestrator:
                         enable_thinking=enable_thinking,
                     )
             except Exception as e:
-                # Online error -> fallback to local
+                # Online error -> only fallback to local GGUF if internet is genuinely unavailable.
+                # Server timeouts (read timeout, slow inference) should NOT trigger GGUF fallback
+                # because the server IS reachable — it's just slow.
                 if not is_offline and isinstance(task_backend, OpenAIBackend):
-                    yield AgentEvent("fallback", {"error": str(e), "message": "Falling back to local engine"})
-                    task_backend = LocalBackend(cfg)
-                    session.is_offline = True
-                    is_offline = True
-                    active_tools = self.prompt_builder.get_tools(is_offline=True, complexity=complexity)
-                    try:
-                        resp = task_backend.chat_completion(
-                            messages=session.context.messages,
-                            tools=active_tools if active_tools else None,
-                            temperature=cfg.temperature,
-                            max_tokens=2048,
-                            enable_thinking=enable_thinking,
-                        )
-                    except Exception as fallback_err:
-                        yield AgentEvent("error", {"error": str(fallback_err)})
+                    err_str = str(e).lower()
+                    is_timeout = "timeout" in err_str or "timed out" in err_str or "read operation timed out" in err_str
+                    is_network_down = not is_internet_available(timeout=1.5)
+
+                    if is_timeout and not is_network_down:
+                        # Server is alive but slow — retry, don't fallback to GGUF
+                        yield AgentEvent("warning", {
+                            "message": f"Server inference timed out: {e}. Retrying...",
+                        })
+                        try:
+                            resp = task_backend.chat_completion(
+                                messages=session.context.messages,
+                                tools=active_tools if active_tools else None,
+                                temperature=cfg.temperature,
+                                max_tokens=max_tokens,
+                                enable_thinking=enable_thinking,
+                            )
+                        except Exception as retry_err:
+                            yield AgentEvent("error", {
+                                "error": f"Server inference failed after retry: {retry_err}. "
+                                         "The server may be under heavy load. Please try again."
+                            })
+                            return
+                    elif is_network_down:
+                        # Internet genuinely unavailable — fallback to local GGUF
+                        yield AgentEvent("fallback", {"error": str(e), "message": "Internet unavailable. Falling back to local engine"})
+                        task_backend = LocalBackend(cfg)
+                        session.is_offline = True
+                        is_offline = True
+                        active_tools = self.prompt_builder.get_tools(is_offline=True, complexity=complexity)
+                        try:
+                            resp = task_backend.chat_completion(
+                                messages=session.context.messages,
+                                tools=active_tools if active_tools else None,
+                                temperature=cfg.temperature,
+                                max_tokens=2048,
+                                enable_thinking=enable_thinking,
+                            )
+                        except Exception as fallback_err:
+                            yield AgentEvent("error", {"error": str(fallback_err)})
+                            return
+                    else:
+                        # Other API error (400, 500, etc.) — report directly, don't fallback
+                        yield AgentEvent("error", {"error": f"Server error: {e}"})
                         return
                 else:
                     yield AgentEvent("error", {"error": str(e)})

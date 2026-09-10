@@ -43,6 +43,59 @@ class LocalBackend:
         model = self._ensure_model()
         model.load()
 
+    @staticmethod
+    def _sanitize_messages_for_gguf(messages: List[dict]) -> List[dict]:
+        """
+        Sanitize OpenAI-format messages for GGUF Jinja2 chat templates.
+        Fixes 'Can only get item pairs from a mapping' errors by:
+        - Ensuring content is always a string (never None or list)
+        - Stripping tool_calls and tool messages (GGUF templates don't support them)
+        - Removing tool-related role messages
+        """
+        sanitized = []
+        for msg in messages:
+            role = msg.get("role", "")
+            # Skip tool result messages entirely — GGUF models don't understand them
+            if role == "tool":
+                continue
+
+            clean = {"role": role}
+
+            # Ensure content is always a string
+            content = msg.get("content")
+            if content is None:
+                content = ""
+            elif isinstance(content, list):
+                # Multimodal content (image_url + text blocks) — extract text parts
+                text_parts = []
+                for part in content:
+                    if isinstance(part, dict):
+                        if part.get("type") == "text":
+                            text_parts.append(part.get("text", ""))
+                    elif isinstance(part, str):
+                        text_parts.append(part)
+                content = "\n".join(text_parts) if text_parts else ""
+            elif not isinstance(content, str):
+                content = str(content)
+
+            # For assistant messages with tool_calls, embed tool call info in content text
+            if role == "assistant" and msg.get("tool_calls"):
+                tc_descriptions = []
+                for tc in msg["tool_calls"]:
+                    if isinstance(tc, dict):
+                        fn = tc.get("function", {})
+                        name = fn.get("name", "unknown")
+                        args = fn.get("arguments", "{}")
+                        tc_descriptions.append(f"[Called tool: {name}({args})]")
+                if tc_descriptions:
+                    content = (content + "\n" + "\n".join(tc_descriptions)).strip()
+                # Do NOT include tool_calls key — GGUF template will crash on it
+
+            clean["content"] = content
+            sanitized.append(clean)
+
+        return sanitized
+
     def chat_completion(
         self,
         messages: List[dict],
@@ -52,8 +105,9 @@ class LocalBackend:
         enable_thinking: bool = True,
     ) -> ChatResponse:
         model = self._ensure_model()
+        sanitized_msgs = self._sanitize_messages_for_gguf(messages)
         resp = model.create_chat_completion(
-            messages=messages,
+            messages=sanitized_msgs,
             tools=tools,
             tool_choice="auto",
             temperature=temperature,
