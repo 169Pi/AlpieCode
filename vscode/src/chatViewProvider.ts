@@ -1744,7 +1744,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  private static readonly MAX_SAVED_CONVERSATIONS = 50;
+
   private _saveHistory() {
+    if (this._conversations.length > ChatViewProvider.MAX_SAVED_CONVERSATIONS) {
+      this._conversations = this._conversations.slice(-ChatViewProvider.MAX_SAVED_CONVERSATIONS);
+    }
     this._ctx.globalState.update("alpiecode.history", {
       conversations: this._conversations,
       activeId: this._activeId,

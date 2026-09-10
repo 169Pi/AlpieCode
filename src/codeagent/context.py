@@ -6,6 +6,7 @@ and dynamically assembles token-budgeted context windows via build_context()
 for OpenAI-compatible chat completion endpoints.
 """
 
+import copy
 import json
 import time
 from typing import Any, Dict, List, Optional
@@ -52,9 +53,19 @@ class ContextManager:
     def __init__(self, max_tokens: int = 262_144):
         self.max_tokens = max_tokens
         self._messages: List[dict] = []
+        self._raw_messages: List[dict] = []
         self._metadata: List[Dict[str, Any]] = []
         self._turn_counter: int = 0
         self._cached_summary: Optional[str] = None
+        self._cached_summary_len: int = 0
+        self._cached_context: Optional[List[dict]] = None
+
+    def invalidate_cache(self, reset_summary: bool = False) -> None:
+        """Invalidate cached context assembly."""
+        self._cached_context = None
+        if reset_summary:
+            self._cached_summary = None
+            self._cached_summary_len = 0
 
     def _estimate_single_message_tokens(self, msg: dict) -> int:
         """Estimate token count for an individual message."""
@@ -141,27 +152,37 @@ class ContextManager:
 
     def set_system_prompt(self, prompt: str) -> None:
         """Set or update the root system prompt (Layer 1)."""
+        self.invalidate_cache(reset_summary=True)
         sys_msg = {"role": "system", "content": prompt}
         if self._messages and self._messages[0].get("role") == "system":
-            self._messages[0] = sys_msg
+            self._messages[0] = dict(sys_msg)
+            if self._raw_messages and self._raw_messages[0].get("role") == "system":
+                self._raw_messages[0] = copy.deepcopy(sys_msg)
+            else:
+                self._raw_messages.insert(0, copy.deepcopy(sys_msg))
             if self._metadata:
                 self._metadata[0] = self._build_metadata_entry(sys_msg, importance="high")
         else:
-            self._messages.insert(0, sys_msg)
+            self._messages.insert(0, dict(sys_msg))
+            self._raw_messages.insert(0, copy.deepcopy(sys_msg))
             self._metadata.insert(0, self._build_metadata_entry(sys_msg, importance="high"))
 
     def add_user_message(self, content: Any, metadata: Optional[dict] = None) -> None:
         """Append a user request and record metadata."""
+        self.invalidate_cache()
         self._turn_counter += 1
         msg = {"role": "user", "content": content}
-        self._messages.append(msg)
+        self._messages.append(dict(msg))
+        self._raw_messages.append(copy.deepcopy(msg))
         self._metadata.append(self._build_metadata_entry(msg, custom=metadata))
 
     def add_assistant_response(self, response: ChatResponse, metadata: Optional[dict] = None) -> None:
         """Append an assistant response with tool calls and record metadata."""
         if response.tool_calls or response.content:
+            self.invalidate_cache()
             msg = _serialize_assistant_message(response)
-            self._messages.append(msg)
+            self._messages.append(dict(msg))
+            self._raw_messages.append(copy.deepcopy(msg))
             tool_names = [tc.name for tc in response.tool_calls] if response.tool_calls else []
             custom_meta = metadata.copy() if metadata else {}
             custom_meta["tool_names"] = tool_names
@@ -176,12 +197,14 @@ class ContextManager:
         metadata: Optional[dict] = None,
     ) -> None:
         """Append a tool execution result and record metadata."""
+        self.invalidate_cache()
         msg = {
             "role": "tool",
             "tool_call_id": tool_call_id,
             "content": content,
         }
-        self._messages.append(msg)
+        self._messages.append(dict(msg))
+        self._raw_messages.append(copy.deepcopy(msg))
         self._metadata.append(
             self._build_metadata_entry(msg, tool_name=tool_name, custom=metadata)
         )
@@ -190,7 +213,9 @@ class ContextManager:
         """
         Truncate large historical tool outputs from turns older than keep_last_turns.
         Preserves update_plan and short outputs.
+        Note: Operates on working _messages, while _raw_messages / raw_history remains pristine.
         """
+        self.invalidate_cache()
         assistant_indices = [
             i for i, m in enumerate(self._messages)
             if isinstance(m, dict) and m.get("role") == "assistant"
@@ -206,6 +231,8 @@ class ContextManager:
                 # Never truncate update_plan output
                 if "[Plan updated]" in content or "Plan Status:" in content or len(content) <= 300:
                     continue
+                msg = dict(msg)
+                self._messages[i] = msg
                 lines = content.splitlines()
                 if len(lines) > 8:
                     preview_start = "\n".join(lines[:3])
@@ -215,6 +242,7 @@ class ContextManager:
                     msg["content"] = content[:150] + f"... [truncated {len(content)} chars]"
                 # Update tokens in metadata
                 if i < len(self._metadata):
+                    self._metadata[i] = dict(self._metadata[i])
                     self._metadata[i]["tokens"] = self._estimate_single_message_tokens(msg)
 
     def build_context(
@@ -230,6 +258,10 @@ class ContextManager:
           4. recent messages (intact tool-call pairs)
           5. current request (tail of conversation)
         """
+        is_default_params = (max_tokens is None or max_tokens == self.max_tokens) and recent_turns == 4
+        if is_default_params and self._cached_context is not None:
+            return [dict(m) for m in self._cached_context]
+
         if not self._messages:
             return []
 
@@ -276,10 +308,15 @@ class ContextManager:
             context_blocks.append(system_msg)
 
         if distant_messages:
-            # Layer 2: Distant Summary
-            summary_text = self._cached_summary or extract_conversation_summary(
-                distant_messages, distant_metadata
-            )
+            # Layer 2: Distant Summary (Lazy-cached)
+            if self._cached_summary is not None and len(distant_messages) == self._cached_summary_len:
+                summary_text = self._cached_summary
+            else:
+                summary_text = extract_conversation_summary(
+                    distant_messages, distant_metadata
+                )
+                self._cached_summary = summary_text
+                self._cached_summary_len = len(distant_messages)
             # Layer 3: Relevant History Anchors
             relevant_anchors = select_relevant_history(
                 distant_messages, distant_metadata
@@ -292,10 +329,16 @@ class ContextManager:
                 supplemental_parts.append(relevant_anchors)
 
             if supplemental_parts:
-                context_blocks.append({
-                    "role": "system",
-                    "content": "\n\n".join(supplemental_parts),
-                })
+                supp_text = "=== CONVERSATION SUMMARY & RELEVANT HISTORY ===\n" + "\n\n".join(supplemental_parts)
+                if context_blocks and context_blocks[0].get("role") == "system":
+                    # Merge into the existing primary system prompt to ensure strictly one system message at the beginning
+                    context_blocks[0] = dict(context_blocks[0])
+                    context_blocks[0]["content"] = (context_blocks[0].get("content") or "") + "\n\n" + supp_text
+                else:
+                    context_blocks.insert(0, {
+                        "role": "system",
+                        "content": supp_text,
+                    })
 
             # Ensure user query anchor: endpoint requires at least one 'user' message
             has_user_in_recent = any(m.get("role") == "user" for m in recent_messages)
@@ -325,7 +368,10 @@ class ContextManager:
         if estimate_tokens(context_blocks) > effective_limit:
             context_blocks = compact_messages(context_blocks)
 
-        return context_blocks
+        if is_default_params:
+            self._cached_context = [dict(m) for m in context_blocks]
+
+        return [dict(m) for m in context_blocks]
 
     @property
     def messages(self) -> List[dict]:
@@ -335,18 +381,20 @@ class ContextManager:
     @messages.setter
     def messages(self, msgs: List[dict]) -> None:
         """Replace messages and rebuild metadata."""
-        self._messages = list(msgs)
+        self.invalidate_cache(reset_summary=True)
+        self._messages = [dict(m) for m in msgs]
+        self._raw_messages = [copy.deepcopy(m) for m in msgs]
         self._rebuild_metadata()
 
     @property
     def all_messages(self) -> List[dict]:
         """Returns the complete, uncompressed historical messages."""
-        return list(self._messages)
+        return [copy.deepcopy(m) for m in self._raw_messages]
 
     @property
     def raw_history(self) -> List[dict]:
         """Alias for all_messages."""
-        return list(self._messages)
+        return [copy.deepcopy(m) for m in self._raw_messages]
 
     @property
     def metadata(self) -> List[Dict[str, Any]]:

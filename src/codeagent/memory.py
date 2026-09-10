@@ -47,34 +47,62 @@ def load_memories(workdir: Path) -> List[dict]:
         return []
 
 
-def save_memory(workdir: Path, content: str, memory_type: str = "learning") -> None:
+def save_memories_batch(workdir: Path, entries: List[dict]) -> None:
     """
-    Save a memory entry for a project.
+    Save multiple memory entries for a project in a single atomic disk write.
 
     Args:
         workdir: Project directory
-        content: The memory content to save
-        memory_type: Type of memory (learning, structure, command, pattern)
+        entries: List of dicts, each with 'content' and optional 'type'
     """
+    if not entries:
+        return
+
     MEMORY_DIR.mkdir(parents=True, exist_ok=True)
     path = _memory_path(workdir)
 
     existing = load_memories(workdir)
-    existing.append({
-        "content": content,
-        "type": memory_type,
-        "timestamp": time.time(),
-        "workdir": str(workdir.resolve()),
-    })
+    existing_contents = {m.get("content") for m in existing}
+    now = time.time()
+    workdir_str = str(workdir.resolve())
+
+    added = False
+    for entry in entries:
+        c = entry.get("content", "").strip()
+        if not c or c in existing_contents:
+            continue
+        existing.append({
+            "content": c,
+            "type": entry.get("type", "learning"),
+            "timestamp": now,
+            "workdir": workdir_str,
+        })
+        existing_contents.add(c)
+        added = True
+
+    if not added:
+        return
 
     # Keep only the last 20 memories per project (FIFO)
     if len(existing) > 20:
         existing = existing[-20:]
 
     path.write_text(json.dumps({
-        "project": str(workdir.resolve()),
+        "project": workdir_str,
         "memories": existing,
     }, indent=2))
+
+
+def save_memory(workdir: Path, content: str, memory_type: str = "learning") -> None:
+    """
+    Save a single memory entry for a project.
+
+    Args:
+        workdir: Project directory
+        content: The memory content to save
+        memory_type: Type of memory (learning, structure, command, pattern)
+    """
+    save_memories_batch(workdir, [{"content": content, "type": memory_type}])
 
 
 def format_memories_for_prompt(workdir: Path) -> Optional[str]:
@@ -102,13 +130,14 @@ def format_memories_for_prompt(workdir: Path) -> Optional[str]:
 def extract_and_save_memories(workdir: Path, messages: list) -> None:
     """
     After a session ends, extract key learnings from the conversation
-    and save them as memories.
+    and save them as memories in a single atomic batch.
 
     Scans tool results for commonly useful information like:
     - Successful build/test commands
     - Project structure (from list_files results)
     - Completion summaries
     """
+    to_save: List[dict] = []
     saved_cmds = set()  # Avoid duplicate command memories
 
     for idx, msg in enumerate(messages):
@@ -137,20 +166,23 @@ def extract_and_save_memories(workdir: Path, messages: list) -> None:
                                         cmd = ""
                                     if cmd and cmd not in saved_cmds:
                                         if any(kw in cmd for kw in ["pytest", "test", "unittest", "npm run test", "cargo test", "go test"]):
-                                            save_memory(workdir, f"Working test command: {cmd}", "command")
+                                            to_save.append({"content": f"Working test command: {cmd}", "type": "command"})
                                             saved_cmds.add(cmd)
                                         elif any(kw in cmd for kw in ["build", "compile", "g++", "gcc", "make", "cargo build", "npm run build"]):
-                                            save_memory(workdir, f"Working build command: {cmd}", "command")
+                                            to_save.append({"content": f"Working build command: {cmd}", "type": "command"})
                                             saved_cmds.add(cmd)
                         break
 
             # ── Save project structure from list_files / tree output ──
             if "├" in content or "└" in content:
                 if len(content) < 2000:
-                    save_memory(workdir, f"Project structure:\n{content[:500]}", "structure")
+                    to_save.append({"content": f"Project structure:\n{content[:500]}", "type": "structure"})
 
         # ── Save completion summaries ──
         if msg.get("role") == "assistant" and msg.get("content"):
             content = msg["content"]
             if content.strip().startswith("DONE"):
-                save_memory(workdir, content.strip()[:200], "completion_summary")
+                to_save.append({"content": content.strip()[:200], "type": "completion_summary"})
+
+    if to_save:
+        save_memories_batch(workdir, to_save)

@@ -6,11 +6,14 @@ Unit tests verifying Phase 1 stability fixes:
 - BUG-06: orchestrator.py backend immutability / thread safety
 - BUG-09: tools.py bash timeout error message alignment
 - BUG-11: compaction.py tool-call pairing integrity
+- System message single-instance guarantee (prevents 400 'System message must be at the beginning')
+- Benchmark directory stripping (prevents hallucinated cd /testbed failures)
 """
 import ast
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 import json
+import re
 import pytest
 
 from codeagent.executor import ToolExecutor, ToolCall, ToolResult
@@ -21,6 +24,7 @@ from codeagent.config import Config
 from codeagent.backends.base import ChatResponse
 from codeagent.backends.openai_backend import OpenAIBackend
 from codeagent.backends.local_backend import LocalBackend
+from codeagent.context import ContextManager
 
 
 def test_bug01_executor_dead_code_removed():
@@ -203,3 +207,53 @@ def test_bug11_compaction_tool_pairing_guard():
             assert prev_msg.get("role") in ("assistant", "tool"), (
                 f"Tool message at index {idx} was preceded by role '{prev_msg.get('role')}'"
             )
+
+
+def test_strictly_one_system_message_on_distant_turns():
+    """Verify build_context produces strictly ONE system message at index 0, preventing 400 errors."""
+    cm = ContextManager(max_tokens=8192)
+    cm.set_system_prompt("Base system prompt for AlpieCode.")
+
+    # Add 10 turns (exceeding recent_turns=4, triggering distant turn extraction)
+    for i in range(10):
+        cm.add_user_message(f"User request {i}")
+        cm.add_assistant_response(ChatResponse(
+            content=f"Assistant response {i}",
+            reasoning=None,
+            tool_calls=[ToolCall(id=f"c_{i}", name="bash", arguments={"command": f"echo {i}"})]
+        ))
+        cm.add_tool_result(f"c_{i}", f"output {i}", tool_name="bash")
+
+    context = cm.build_context(recent_turns=4)
+    
+    # Must have exactly one system message
+    system_messages = [m for m in context if m.get("role") == "system"]
+    assert len(system_messages) == 1, f"Expected exactly 1 system message, got {len(system_messages)}"
+    
+    # It must be at index 0
+    assert context[0].get("role") == "system"
+    
+    # It should include the merged conversation summary/history
+    assert "CONVERSATION SUMMARY" in context[0]["content"]
+
+
+def test_bash_strips_testbed_hallucination(tmp_path):
+    """Verify tools.py _bash automatically strips 'cd /testbed &&' prefixes."""
+    import subprocess
+    from codeagent.tools import _bash
+
+    captured_cmds = []
+    def fake_run(cmd, **kwargs):
+        captured_cmds.append(cmd)
+        mock = MagicMock()
+        mock.stdout = "OK"
+        mock.stderr = ""
+        mock.returncode = 0
+        return mock
+
+    with patch("subprocess.run", side_effect=fake_run):
+        _bash(tmp_path, "cd /testbed && python -m pytest test_file.py")
+        assert len(captured_cmds) == 1
+        executed_str = " ".join(captured_cmds[0])
+        assert "/testbed" not in executed_str
+        assert "python -m pytest test_file.py" in executed_str

@@ -375,7 +375,7 @@ COMPLEXITY_CONFIG = {
 
 BASH_RULES = """\
 ## Shell Environment: Bash (Linux/macOS)
-- You are ALREADY in the project root directory. NEVER run `cd /home/...` or `cd /testbed`
+- You are ALREADY in the project root directory. Run all commands directly without using `cd`
 - Use `&&` to chain commands
 - Use `export VAR=value` for environment variables
 - Use `python3` (not `python` which may be Python 2)
@@ -386,7 +386,7 @@ BASH_RULES = """\
 
 WSL_RULES = """\
 ## Shell Environment: WSL Bash (Windows Subsystem for Linux)
-- You are ALREADY in the project root directory. NEVER run `cd /home/...` or `cd /testbed`
+- You are ALREADY in the project root directory. Run all commands directly without using `cd`
 - Use bash syntax: `&&` to chain, `export VAR=value` for env vars
 - Use `python3` (not `python`)
 - For testing python code, use `python3 -m unittest`

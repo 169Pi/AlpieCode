@@ -425,12 +425,17 @@ def _bash(workdir: Path, command: str) -> str:
                     command = re.sub(r"(?:[^\s;&|]*/)?(?:python3?|py)(?:\.exe)?\s+-m\s+pip3?\s+install\b", f"{uv_bin} pip install", command)
                     command = re.sub(r"(?:[^\s;&|]*/)?pip3?\s+install\b", f"{uv_bin} pip install", command)
 
+        # Strip hallucinated benchmark directory switches (e.g. cd /testbed && ..., cd /root && ...)
+        command = re.sub(r"^\s*cd\s+/(?:testbed|root|home/[^\s;&]+)\s*(&&|;)\s*", "", command)
+
         # Cross-platform shell resolution
         if shutil.which("bash"):
             shell_cmd = ["bash", "-c", command]
         elif os.name == "nt":
+            # PowerShell 5.1 compatibility: replace '&&' with ';'
+            ps_command = re.sub(r"\s+&&\s+", "; ", command)
             if shutil.which("powershell"):
-                shell_cmd = ["powershell", "-NoProfile", "-Command", command]
+                shell_cmd = ["powershell", "-NoProfile", "-Command", ps_command]
             else:
                 shell_cmd = ["cmd.exe", "/c", command]
         else:
@@ -607,10 +612,15 @@ def _list_files(workdir: Path, path: str = ".", max_depth: int = 4) -> str:
     except (subprocess.TimeoutExpired, FileNotFoundError):
         pass
 
-    # Fallback: os.walk
+    # Fallback: os.walk with directory pruning and early termination
+    prune_dirs = {
+        ".git", ".venv", "venv", "node_modules", "__pycache__",
+        "build", "dist", ".pytest_cache", ".ruff_cache", ".mypy_cache",
+        ".idea", ".vscode", ".next", ".nuxt", "target", "vendor",
+    }
     entries = []
     for root, dirs, files in os.walk(target):
-        dirs[:] = [d for d in dirs if not d.startswith(".")]
+        dirs[:] = [d for d in dirs if not d.startswith(".") and d not in prune_dirs]
         rel_root = os.path.relpath(root, target)
         depth = 0 if rel_root == "." else rel_root.count(os.sep) + 1
         if depth >= max_depth:
@@ -621,6 +631,10 @@ def _list_files(workdir: Path, path: str = ".", max_depth: int = 4) -> str:
                 continue
             rel_path = os.path.join(rel_root, fname) if rel_root != "." else fname
             entries.append(rel_path)
+            if len(entries) >= 200:
+                break
+        if len(entries) >= 200:
+            break
     return "\n".join(entries[:200]) or "(empty directory)"
 
 

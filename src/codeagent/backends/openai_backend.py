@@ -2,8 +2,102 @@
 OpenAI-compatible API inference backend with smart model resolution.
 """
 
+import ast
+import json
+import logging
+import re
 from typing import Any, List, Optional
 from openai import OpenAI, NotFoundError
+
+logger = logging.getLogger(__name__)
+
+
+def _repair_and_parse_json_arguments(raw_args: str) -> dict:
+    """
+    Robustly parse tool call arguments from potentially partial or malformed streaming strings.
+    Handles:
+      - Clean JSON
+      - Single-quoted JSON / Python dict strings via ast.literal_eval
+      - Truncated strings / missing closing quotes & braces from stream cutoffs
+      - Trailing commas
+    Returns a dict of parsed arguments. If unparseable, returns a dict preserving _raw_arguments
+    and _parse_error so the tool dispatcher can provide actionable error reporting.
+    """
+    if not raw_args or not raw_args.strip():
+        return {}
+
+    text = raw_args.strip()
+
+    # 1. Direct standard JSON
+    try:
+        parsed = json.loads(text)
+        if isinstance(parsed, dict):
+            return parsed
+        return {"value": parsed}
+    except Exception:
+        pass
+
+    # 2. Try ast.literal_eval (handles Python single quotes, True/False/None)
+    try:
+        parsed = ast.literal_eval(text)
+        if isinstance(parsed, dict):
+            return parsed
+    except Exception:
+        pass
+
+    # 3. Structural repair for streaming cutoffs / trailing commas
+    repaired = text
+
+    # Remove trailing commas like `..., }` or `..., ]`
+    repaired = re.sub(r",\s*([\}\]])", r"\1", repaired)
+
+    # If trailing comma at end: `{"a": 1,` -> `{"a": 1`
+    repaired = re.sub(r",\s*$", "", repaired)
+
+    # Check unclosed quotes: count non-escaped double quotes
+    quote_count = len(re.findall(r'(?<!\\)"', repaired))
+    if quote_count % 2 != 0:
+        repaired += '"'
+
+    # Balance unclosed brackets and braces
+    open_curly = repaired.count("{") - repaired.count("}")
+    open_square = repaired.count("[") - repaired.count("]")
+
+    if open_square > 0:
+        repaired += "]" * open_square
+    if open_curly > 0:
+        repaired += "}" * open_curly
+
+    try:
+        parsed = json.loads(repaired)
+        if isinstance(parsed, dict):
+            return parsed
+    except Exception:
+        pass
+
+    # 4. If still failing, attempt regex key-value extraction for simple {"key": "val"} forms
+    extracted = {}
+    pattern = r"""['"]([a-zA-Z0-9_-]+)['"]\s*:\s*(?:['"](.*?)['"]|([0-9.]+|true|false|null))"""
+    for kv in re.finditer(pattern, text, re.IGNORECASE):
+        k = kv.group(1)
+        v_str = kv.group(2)
+        v_lit = kv.group(3)
+        if v_str is not None:
+            extracted[k] = v_str
+        elif v_lit is not None:
+            try:
+                extracted[k] = json.loads(v_lit.lower())
+            except Exception:
+                extracted[k] = v_lit
+
+    if extracted:
+        return extracted
+
+    logger.warning("Failed to parse tool call arguments: %s", raw_args[:200])
+    return {
+        "_raw_arguments": raw_args,
+        "_parse_error": "Failed to parse streaming JSON arguments",
+    }
 
 from ..config import Config, get_shared_http_client, is_server_reachable
 from .base import ChatResponse, ToolCall
@@ -185,10 +279,7 @@ class OpenAIBackend:
             tool_calls = []
             for idx in sorted(tool_calls_dict.keys()):
                 item = tool_calls_dict[idx]
-                try:
-                    args = json.loads(item["arguments"])
-                except Exception:
-                    args = {}
+                args = _repair_and_parse_json_arguments(item.get("arguments", ""))
                 tool_calls.append(ToolCall(id=item["id"], name=item["name"], arguments=args))
 
         final_content_str = "".join(full_content).strip()
@@ -260,15 +351,10 @@ class OpenAIBackend:
 
         tool_calls = None
         if msg.tool_calls:
-            import json
             tool_calls = []
             for tc in msg.tool_calls:
-                try:
-                    args = json.loads(tc.function.arguments or "{}")
-                except (json.JSONDecodeError, TypeError):
-                    args = {}
-                if not isinstance(args, dict):
-                    args = {}
+                raw_args = tc.function.arguments or "{}"
+                args = _repair_and_parse_json_arguments(raw_args)
                 tool_calls.append(
                     ToolCall(
                         id=tc.id,

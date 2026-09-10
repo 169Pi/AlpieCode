@@ -102,31 +102,39 @@ class AlpieCodeClient:
         try:
             with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                 current_event_type = "message"
-                current_data_str = ""
+                current_data_lines: List[str] = []
 
                 for raw_line in resp:
-                    line = raw_line.decode("utf-8").strip()
+                    line = raw_line.decode("utf-8").rstrip("\r\n")
                     if not line:
-                        if current_data_str:
+                        if current_data_lines:
+                            raw_data = "\n".join(current_data_lines)
                             try:
-                                event_data = json.loads(current_data_str)
+                                event_data = json.loads(raw_data)
                             except Exception:
-                                event_data = {"content": current_data_str}
+                                event_data = {"content": raw_data}
                             yield AgentEvent(type=current_event_type, data=event_data)
                             current_event_type = "message"
-                            current_data_str = ""
+                            current_data_lines = []
                         continue
 
-                    if line.startswith("event:"):
+                    if line.startswith(":"):
+                        # SSE comment/keepalive ping - ignore
+                        continue
+                    elif line.startswith("event:"):
                         current_event_type = line[6:].strip()
                     elif line.startswith("data:"):
-                        current_data_str = line[5:].strip()
+                        chunk = line[5:]
+                        if chunk.startswith(" "):
+                            chunk = chunk[1:]
+                        current_data_lines.append(chunk)
 
-                if current_data_str:
+                if current_data_lines:
+                    raw_data = "\n".join(current_data_lines)
                     try:
-                        event_data = json.loads(current_data_str)
+                        event_data = json.loads(raw_data)
                     except Exception:
-                        event_data = {"content": current_data_str}
+                        event_data = {"content": raw_data}
                     yield AgentEvent(type=current_event_type, data=event_data)
         except Exception as e:
             yield AgentEvent(type="error", data={"error": f"Server connection failed: {e}"})

@@ -24,6 +24,8 @@ import { URL } from "url";
 const MIN_PREFIX_LENGTH = 8;
 const REQUEST_TIMEOUT = 8000;
 const MAX_CACHE_SIZE = 150;
+const CIRCUIT_BREAKER_FAILURES = 3;
+const CIRCUIT_BREAKER_COOLDOWN_MS = 30000;
 
 /* ------------------------------------------------------------------ */
 /*  Provider                                                          */
@@ -34,6 +36,8 @@ export class AlpieCompletionProvider implements vscode.InlineCompletionItemProvi
   private _timer: ReturnType<typeof setTimeout> | null = null;
   private _abortController: AbortController | null = null;
   private _lruCache: Map<string, string> = new Map();
+  private _consecutiveFailures: number = 0;
+  private _circuitOpenUntil: number = 0;
 
   async provideInlineCompletionItems(
     document: vscode.TextDocument,
@@ -47,6 +51,11 @@ export class AlpieCompletionProvider implements vscode.InlineCompletionItemProvi
       .getConfiguration("alpiecode")
       .get<boolean>("enableAutocomplete", true);
     if (!enabled) { return null; }
+
+    // Circuit breaker: if server is unreachable, don't spam network requests while typing
+    if (Date.now() < this._circuitOpenUntil) {
+      return null;
+    }
 
     // Cancel any previous in-flight request
     if (this._abortController) {
@@ -103,6 +112,10 @@ export class AlpieCompletionProvider implements vscode.InlineCompletionItemProvi
       );
 
       if (!completion || token.isCancellationRequested) { return null; }
+
+      // Reset circuit breaker on successful response
+      this._consecutiveFailures = 0;
+      this._circuitOpenUntil = 0;
 
       // Save to LRU Cache
       if (this._lruCache.size >= MAX_CACHE_SIZE) {
@@ -186,8 +199,15 @@ export class AlpieCompletionProvider implements vscode.InlineCompletionItemProvi
           }
         );
 
-        req.on("error", () => resolve(null));
-        req.on("timeout", () => { req.destroy(); resolve(null); });
+        req.on("error", () => {
+          this._recordFailure();
+          resolve(null);
+        });
+        req.on("timeout", () => {
+          this._recordFailure();
+          req.destroy();
+          resolve(null);
+        });
 
         // Wire up cancellation
         token.onCancellationRequested(() => { req.destroy(); resolve(null); });
@@ -195,14 +215,24 @@ export class AlpieCompletionProvider implements vscode.InlineCompletionItemProvi
         req.write(payload);
         req.end();
       } catch {
+        this._recordFailure();
         resolve(null);
       }
     });
+  }
+
+  private _recordFailure(): void {
+    this._consecutiveFailures++;
+    if (this._consecutiveFailures >= CIRCUIT_BREAKER_FAILURES) {
+      this._circuitOpenUntil = Date.now() + CIRCUIT_BREAKER_COOLDOWN_MS;
+    }
   }
 
   dispose() {
     if (this._timer) { clearTimeout(this._timer); }
     if (this._abortController) { this._abortController.abort(); }
     this._lruCache.clear();
+    this._consecutiveFailures = 0;
+    this._circuitOpenUntil = 0;
   }
 }
