@@ -674,8 +674,3 @@ Configure AlpieCode globally via `alpiecode init` or by exporting environment va
 > **A:** Yes! AlpieCode includes full offline GGUF local model execution. Simply run any CLI command (`alpiecode run "..."`) or start the local server, and it will execute locally using CPU or CUDA hardware acceleration with zero internet access required.
 
 ---
-
-<p align="center">
-  <b>⚡ Built with pride by the 169Pi AI Platform Team ⚡</b><br>
-  <i>Empowering developers with autonomous, reliable, and transparent AI engineering.</i>
-</p>
